@@ -1,0 +1,52 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Coverage files
+*.gcda
+*.gcno
+*.gcov
+
+# Coverage reports
+tests/report/
+report/
+
+# Debug files
+*.pdb
+*.ilk
+*.idb
+*.ipdb
+
+# Build directories
+build/
+bin/
+obj/

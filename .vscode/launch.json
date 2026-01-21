@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"configurations": [
+		{
+			"name": "Launch testMain",
+			"type": "by-gdb",
+			"request": "launch",
+			"program": "${workspaceFolder}/tests/report/testMain.exe"
+		}
+	]
+}
