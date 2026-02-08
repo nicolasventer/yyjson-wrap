@@ -56,6 +56,14 @@ namespace wrap
 
 			bool hasKey(const char* key) const { return yyjson_obj_get(val_, key) != nullptr; }
 
+			std::string toString() const
+			{
+				char* json = yyjson_val_write(val_, 0, nullptr);
+				std::string result(json);
+				free(json);
+				return result;
+			}
+
 			yyjson_val* val_ = nullptr; // Direct access to underlying value
 			yyjson_doc* doc_ = nullptr; // Direct access to underlying document
 		};
@@ -168,6 +176,14 @@ namespace wrap
 			template <typename T> void addVectorNoCheck(const std::vector<T>& valueList)
 			{
 				for (const auto& value : valueList) addNoCheck(value);
+			}
+
+			std::string toString() const
+			{
+				char* json = yyjson_mut_val_write(val_, 0, nullptr);
+				std::string result(json);
+				free(json);
+				return result;
 			}
 
 			yyjson_mut_val* val_ = nullptr;	   // Direct access to underlying value
