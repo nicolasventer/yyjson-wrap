@@ -27,6 +27,21 @@ struct Person
 	bool operator==(const Person& other) const { return name == other.name && age == other.age && hobbies == other.hobbies; }
 };
 
+struct ScoreCard
+{
+	static constexpr size_t N = 3;
+	std::string label;
+	int scores[N] = {0, 0, 0};
+
+	bool operator==(const ScoreCard& other) const
+	{
+		if (label != other.label) return false;
+		for (size_t i = 0; i < N; ++i)
+			if (scores[i] != other.scores[i]) return false;
+		return true;
+	}
+};
+
 // Custom type conversions
 template <> void toJson(MutValueWrapper& value, const Address& a)
 {
@@ -41,6 +56,14 @@ template <> void toJson(MutValueWrapper& value, const Person& p)
 template <> Address fromJson(const ValueWrapper& doc) { return Address{doc["street"], doc["city"], doc["zipCode"]}; }
 
 template <> Person fromJson(const ValueWrapper& doc) { return Person{doc["name"], doc["age"], doc["hobbies"]}; }
+
+template <> void toJson(MutValueWrapper& value, const ScoreCard& w) { value.set("label", w.label, "scores", w.scores); }
+template <> ScoreCard fromJson(const ValueWrapper& doc)
+{
+	ScoreCard w{doc["label"], {}};
+	doc["scores"].fillArray(w.scores);
+	return w;
+}
 
 // ============================================================================
 // Tests for DocWrapper (Reading JSON)
@@ -80,6 +103,38 @@ TEST_CASE("DocWrapper - Read arrays")
 
 	std::vector<std::string> strings = root["strings"];
 	CHECK(strings == std::vector<std::string>{"a", "b", "c"});
+}
+
+TEST_CASE("DocWrapper - Read arrays as std::array")
+{
+	std::string json = R"({"numbers":[1,2,3],"strings":["a","b","c"]})";
+	DocWrapper doc(json);
+	ValueWrapper root = doc;
+
+	std::array<int, 3> numbers = root["numbers"];
+	CHECK(numbers == std::array<int, 3>{1, 2, 3});
+
+	std::array<std::string, 3> strings = root["strings"];
+	CHECK(strings == std::array<std::string, 3>{"a", "b", "c"});
+}
+
+TEST_CASE("DocWrapper - Read arrays into C-style arrays")
+{
+	std::string json = R"({"numbers":[1,2,3],"strings":["a","b","c"]})";
+	DocWrapper doc(json);
+	ValueWrapper root = doc;
+
+	int numbers[3] = {0, 0, 0};
+	root["numbers"].fillArray(numbers);
+	CHECK(numbers[0] == 1);
+	CHECK(numbers[1] == 2);
+	CHECK(numbers[2] == 3);
+
+	std::string strings[3];
+	root["strings"].fillArray(strings);
+	CHECK(strings[0] == "a");
+	CHECK(strings[1] == "b");
+	CHECK(strings[2] == "c");
 }
 
 TEST_CASE("DocWrapper - Access array elements by index")
@@ -188,6 +243,74 @@ TEST_CASE("MutDocWrapper - Add vector to array")
 
 	std::vector<std::string> result = readRoot["hobbies"];
 	CHECK(result == hobbies);
+}
+
+TEST_CASE("MutDocWrapper - Add std::array to document")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	std::array<int, 3> itemsArr{1, 2, 3};
+	root.set("items", itemsArr);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	std::vector<int> items = readRoot["items"];
+	CHECK(items == std::vector<int>{1, 2, 3});
+}
+
+TEST_CASE("MutDocWrapper - Add std::array of strings")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	std::array<std::string, 3> hobbies = {"reading", "coding", "gaming"};
+	root.set("hobbies", hobbies);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	std::vector<std::string> result = readRoot["hobbies"];
+	CHECK(result == std::vector<std::string>{"reading", "coding", "gaming"});
+}
+
+TEST_CASE("MutDocWrapper - Add C-style array to document")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	int items[] = {1, 2, 3};
+	root.set("items", items);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	std::vector<int> result = readRoot["items"];
+	CHECK(result == std::vector<int>{1, 2, 3});
+}
+
+TEST_CASE("MutDocWrapper - Serialization with C-style array")
+{
+	ScoreCard original;
+	original.label = "round1";
+	original.scores[0] = 10;
+	original.scores[1] = 20;
+	original.scores[2] = 30;
+
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+	toJson(root, original);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+	ScoreCard result = readRoot;
+
+	CHECK(result == original);
 }
 
 TEST_CASE("MutDocWrapper - Nested objects")

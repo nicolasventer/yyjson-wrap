@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,7 @@ namespace wrap
 
 			// Conversion operators
 			operator int() const { return yyjson_get_int(val_); }
+			operator unsigned int() const { return static_cast<unsigned int>(yyjson_get_uint(val_)); }
 			operator int64_t() const { return yyjson_get_sint(val_); }
 			operator uint64_t() const { return yyjson_get_uint(val_); }
 			operator double() const { return yyjson_get_real(val_); }
@@ -46,6 +48,37 @@ namespace wrap
 					}
 				}
 				return res;
+			}
+			template <typename T, size_t N> operator std::array<T, N>() const
+			{
+				std::array<T, N> res{};
+				if (yyjson_is_arr(val_))
+				{
+					size_t idx = 0;
+					size_t max = 0;
+					yyjson_val* val = nullptr;
+					yyjson_arr_foreach(val_, idx, max, val)
+					{
+						if (idx >= N) break;
+						ValueWrapper elem(val, doc_);
+						res[idx] = static_cast<T>(elem);
+					}
+				}
+				return res;
+			}
+			template <typename T, size_t N> void fillArray(T (&arr)[N]) const
+			{
+				if (!yyjson_is_arr(val_)) return;
+				size_t i = 0;
+				size_t idx = 0;
+				size_t max = 0;
+				yyjson_val* val = nullptr;
+				yyjson_arr_foreach(val_, idx, max, val)
+				{
+					if (i >= N) break;
+					ValueWrapper elem(val, doc_);
+					arr[i++] = static_cast<T>(elem);
+				}
 			}
 			template <typename T> operator T() const; // Uses fromJson<T>
 
@@ -160,6 +193,18 @@ namespace wrap
 				asArr();
 				addVectorNoCheck(valueList);
 			}
+			// Add std::array to array
+			template <typename T, size_t N> void addArray(const std::array<T, N>& valueList)
+			{
+				asArr();
+				addArrayNoCheck(valueList);
+			}
+			// Add C array to array
+			template <typename T, size_t N> void addArray(const T (&valueList)[N])
+			{
+				asArr();
+				addArrayNoCheck(valueList);
+			}
 
 			void addNoCheck() {}
 			template <typename T> void addNoCheck(const T& value)
@@ -177,6 +222,14 @@ namespace wrap
 			{
 				for (const auto& value : valueList) addNoCheck(value);
 			}
+			template <typename T, size_t N> void addArrayNoCheck(const std::array<T, N>& valueList)
+			{
+				for (const auto& value : valueList) addNoCheck(value);
+			}
+			template <typename T, size_t N> void addArrayNoCheck(const T (&valueList)[N])
+			{
+				for (size_t i = 0; i < N; ++i) addNoCheck(valueList[i]);
+			}
 
 			std::string toString() const
 			{
@@ -190,6 +243,7 @@ namespace wrap
 			yyjson_mut_doc* mutDoc_ = nullptr; // Direct access to underlying document
 		private:
 			yyjson_mut_val* createValue(int value) { return yyjson_mut_int(mutDoc_, value); }
+			yyjson_mut_val* createValue(unsigned int value) { return yyjson_mut_uint(mutDoc_, value); }
 			yyjson_mut_val* createValue(int64_t value) { return yyjson_mut_sint(mutDoc_, value); }
 			yyjson_mut_val* createValue(uint64_t value) { return yyjson_mut_uint(mutDoc_, value); }
 			yyjson_mut_val* createValue(double value) { return yyjson_mut_real(mutDoc_, value); }
@@ -202,6 +256,26 @@ namespace wrap
 				for (const auto& v : value)
 				{
 					yyjson_mut_val* val = createValue(v);
+					yyjson_mut_arr_append(arr, val);
+				}
+				return arr;
+			}
+			template <typename T, size_t N> yyjson_mut_val* createValue(const std::array<T, N>& value)
+			{
+				yyjson_mut_val* arr = yyjson_mut_arr(mutDoc_);
+				for (const auto& v : value)
+				{
+					yyjson_mut_val* val = createValue(v);
+					yyjson_mut_arr_append(arr, val);
+				}
+				return arr;
+			}
+			template <typename T, size_t N> yyjson_mut_val* createValue(const T (&value)[N])
+			{
+				yyjson_mut_val* arr = yyjson_mut_arr(mutDoc_);
+				for (size_t i = 0; i < N; ++i)
+				{
+					yyjson_mut_val* val = createValue(value[i]);
 					yyjson_mut_arr_append(arr, val);
 				}
 				return arr;
