@@ -1,27 +1,26 @@
 # yyjsonWrap
 
-# Description
+## Description
 
-yyjsonWrap is a **c++ library** that allows you to **read and write json data** with an easy way to convert to structured data. It is a wrapper around [yyjson](https://github.com/ibireme/yyjson).
+yyjsonWrap is a **C++ library** that lets you **read and write JSON** and convert between JSON and your own types. It wraps [yyjson](https://github.com/ibireme/yyjson).
 
-# Features
+## Features
 
-- read and write json data
-- convert structured data from and to json data
-- easy to use (header only)
+- Read and write JSON (parse from string, build mutable documents, serialize to string)
+- Convert between JSON and structured data via `fromJson` / `toJson`
+- Header-only; define `IMPORT_YYJSON_IMPL` in one translation unit to pull in the implementation
+- Optional namespace: define `USE_WRAP_NAMESPACE` to use the `wrap::` namespace
+- Fast and dependency-free (yyjson is included in the repo)
 
-Note: This library is both fast and easy to use since it is a wrapper around yyjson.
+Note: Performance comes from yyjson; the wrapper adds a small, type-safe C++ layer on top.
 
-# Installation
+## Installation
 
-## Header only
+### Header-only
 
-Include the [`yyjsonWrap.hpp`](yyjsonWrap/yyjsonWrap.hpp) anywhere you want to use it.
-
-Download the `yyjsonWrap` folder using this [download link](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Fnicolasventer%2Fyyjson-wrap%2Ftree%2Fmain%2FyyjsonWrap).  
-Alternatively, you can download the latest version of `yyjson source files` directly from the [yyjson repository](https://github.com/ibireme/yyjson/tree/master/src) using this [download link](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Fibireme%2Fyyjson%2Ftree%2Fmaster%2Fsrc).
-
-To use the library, you need to define `IMPORT_YYJSON_IMPL` before including the header to include the implementation:
+1. Add the `yyjsonWrap` folder to your include path.
+2. Include [`yyjsonWrap.hpp`](yyjsonWrap/yyjsonWrap.hpp) where you use the library.
+3. In **exactly one** translation unit, define `IMPORT_YYJSON_IMPL` before the include so the yyjson implementation is compiled:
 
 ```cpp
 #define IMPORT_YYJSON_IMPL
@@ -29,12 +28,16 @@ To use the library, you need to define `IMPORT_YYJSON_IMPL` before including the
 #undef IMPORT_YYJSON_IMPL
 ```
 
+To use the optional `wrap` namespace (e.g. `wrap::DocWrapper`), define `USE_WRAP_NAMESPACE` before including the header.
+
+**Getting the code:** Clone this repo or download the `yyjsonWrap` folder via [this link](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Fnicolasventer%2Fyyjson-wrap%2Ftree%2Fmain%2FyyjsonWrap). The yyjson sources are included under `yyjsonWrap/yyjson/`; you can also fetch the latest from the [yyjson repo](https://github.com/ibireme/yyjson/tree/master/src) if needed.
+
 ### Requirements
 
-c++17 or later required for compilation.  
-No external dependencies (yyjson is included in the repository).
+- **C++17** or later
+- No external dependencies (yyjson is vendored in the repository)
 
-# Example
+## Example
 
 Content of [example.cpp](example.cpp)
 
@@ -105,17 +108,21 @@ int main()
 
 ```
 
-Output:
+**Output:**
 
 ```
 {"name":"Alice","age":25,"hobbies":["reading","coding"],"address":{"street":"123 Main St","city":"New York","zipCode":"10001"}}
 ```
 
-# Usage
+## Testing
+
+Run the tests from the project root (see `tests/` and `tests/exec_test.bat` for your setup).
+
+## Usage
 
 _The usage is not exhaustive._
 
-## Reading JSON
+### Reading JSON
 
 ```cpp
 // Parse JSON from string
@@ -138,7 +145,7 @@ if (root.hasKey("address")) {
 ValueWrapper firstHobby = root["hobbies"][0];
 ```
 
-## Writing JSON
+### Writing JSON
 
 ```cpp
 // Create a mutable document
@@ -159,7 +166,7 @@ root.set("hobbies", hobbies);
 std::string json = mutDoc.toString();
 ```
 
-## Custom Types
+### Custom Types
 
 ```cpp
 // Implement toJson for writing custom types
@@ -175,39 +182,46 @@ template <> MyType fromJson(const ValueWrapper& doc)
 }
 ```
 
-## Main API
+### Main API
 
 ```cpp
 // Reading JSON
 class DocWrapper
 {
 public:
-    DocWrapper(const std::string& data);  // Parse JSON from string
+    // Parse JSON from string or buffer
+    DocWrapper(const char* data, size_t len);
+    DocWrapper(const std::string& data);
     operator ValueWrapper() const;
     std::string toString() const;
+    // Move-only; doc/root are internal.
 
     class ValueWrapper
     {
     public:
         // Conversion operators
         operator int() const;
+        operator unsigned int() const;
         operator int64_t() const;
         operator uint64_t() const;
         operator double() const;
         operator bool() const;
         operator std::string() const;
         template <typename T> operator std::vector<T>() const;
+        template <typename T, size_t N> operator std::array<T, N>() const;
+        template <typename T, size_t N> void fillArray(T (&arr)[N]) const;
         template <typename T> operator T() const;  // Uses fromJson<T>
 
-        // Access operators
+        // Access
         ValueWrapper operator[](const char* key) const;
         ValueWrapper operator[](size_t index) const;
         ValueWrapper operator[](int index) const;
-
         bool hasKey(const char* key) const;
 
-        yyjson_val* val_;  // Direct access to underlying value
-        yyjson_doc* doc_;  // Direct access to underlying document
+        std::string toString() const;
+
+        yyjson_val* val_;
+        yyjson_doc* doc_;
     };
 };
 
@@ -215,27 +229,34 @@ public:
 class MutDocWrapper
 {
 public:
-    MutDocWrapper();  // Create empty document
+    MutDocWrapper();  // Empty document with root object
     operator MutValueWrapper() const;
     std::string toString() const;
 
     class MutValueWrapper
     {
-        // Add object properties (variadic) (CAREFUL: it will NOT override existing properties)
+    public:
+        MutValueWrapper& asObj();   // Ensure value is an object
+        MutValueWrapper& asArr();   // Ensure value is an array
+
+        // Object: set key-value pairs. Does NOT override existing keys.
         template <typename... Args> void set(Args&&... args);
+        template <typename T> void setNoCheck(const char* key, const T& value);
 
-        // Add array elements (variadic)
+        // Array: add elements
         template <typename... Args> void add(Args&&... args);
+        template <typename T> void addArray(const std::vector<T>& valueList);
+        template <typename T, size_t N> void addArray(const std::array<T, N>& valueList);
+        template <typename T, size_t N> void addArray(const T (&valueList)[N]);
 
-        // Add vector to array
-        template <typename T> void addVector(const std::vector<T>& valueList);
+        std::string toString() const;
 
         yyjson_mut_val* val_;     // Direct access to underlying value
         yyjson_mut_doc* mutDoc_;  // Direct access to underlying document
     };
 };
 
-// Custom type conversion
+// Custom type conversion (specialize these for your types)
 template <typename T> T fromJson(const ValueWrapper& doc);
 template <typename T> void toJson(MutValueWrapper& value, const T& obj);
 
@@ -243,11 +264,11 @@ using ValueWrapper = DocWrapper::ValueWrapper;
 using MutValueWrapper = MutDocWrapper::MutValueWrapper;
 ```
 
-**Note:** you should never manually call `fromJson` or `toJson`.
+**Note:** You should never manually call `fromJson` or `toJson`. Use implicit conversion (e.g. `Person p = value;`) or `static_cast<T>(value)` instead.
 
-# License
+## License
 
-MIT License. See [LICENSE file](LICENSE).
+MIT License. See [LICENSE file](LICENSE).  
 Please refer me with:
 
-    Copyright (c) Nicolas VENTER All rights reserved.
+    Copyright (c) Nicolas VENTER. All rights reserved.

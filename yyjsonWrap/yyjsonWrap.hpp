@@ -66,6 +66,7 @@ namespace wrap
 				}
 				return res;
 			}
+			// Fill a C-style array (cannot be returned by value)
 			template <typename T, size_t N> void fillArray(T (&arr)[N]) const
 			{
 				if (!yyjson_is_arr(val_)) return;
@@ -80,9 +81,9 @@ namespace wrap
 					arr[i++] = static_cast<T>(elem);
 				}
 			}
-			template <typename T> operator T() const; // Uses fromJson<T>
+			template <typename T> operator T() const; // Custom types: uses fromJson<T>
 
-			// Access operators
+			// Object/array access
 			ValueWrapper operator[](const char* key) const { return {yyjson_obj_get(val_, key), doc_}; }
 			ValueWrapper operator[](size_t index) const { return {yyjson_arr_get(val_, index), doc_}; }
 			ValueWrapper operator[](int index) const { return {yyjson_arr_get(val_, static_cast<size_t>(index)), doc_}; }
@@ -102,8 +103,9 @@ namespace wrap
 		};
 
 		DocWrapper() = default;
-		DocWrapper(const std::string& data) :
-			doc(yyjson_read(data.c_str(), data.length(), 0)), root(yyjson_doc_get_root(doc)) {} // Parse JSON from string
+		// Parse JSON from string
+		DocWrapper(const char* data, size_t len) : doc(yyjson_read(data, len, 0)), root(yyjson_doc_get_root(doc)) {}
+		DocWrapper(const std::string& data) : doc(yyjson_read(data.c_str(), data.length(), 0)), root(yyjson_doc_get_root(doc)) {}
 		DocWrapper(const DocWrapper&) = delete;
 		DocWrapper& operator=(const DocWrapper&) = delete;
 		DocWrapper(DocWrapper&& other) noexcept : doc(other.doc), root(other.root)
@@ -151,13 +153,14 @@ namespace wrap
 			MutValueWrapper() = default;
 			MutValueWrapper(yyjson_mut_val* val, yyjson_mut_doc* mutDoc) : val_(val), mutDoc_(mutDoc) {}
 
+			// Ensure value is an object
 			MutValueWrapper& asObj()
 			{
 				if (!yyjson_mut_is_obj(val_)) yyjson_mut_set_obj(val_);
 				return *this;
 			}
 
-			// Add object properties (variadic) (CAREFUL: it will NOT override existing properties)
+			// Set key-value pairs (variadic). Does not override existing keys; add only.
 			template <typename... Args> void set(Args&&... args)
 			{
 				asObj();
@@ -176,30 +179,31 @@ namespace wrap
 				yyjson_mut_obj_add_val(mutDoc_, val_, key, val);
 			}
 
+			// Ensure value is an array
 			MutValueWrapper& asArr()
 			{
 				if (!yyjson_mut_is_arr(val_)) yyjson_mut_set_arr(val_);
 				return *this;
 			}
-			// Add array elements (variadic)
+			// Append one or more elements to the array (variadic).
 			template <typename... Args> void add(Args&&... args)
 			{
 				asArr();
 				addNoCheck(std::forward<Args>(args)...);
 			}
-			// Add vector to array
-			template <typename T> void addVector(const std::vector<T>& valueList)
+			// Append all elements of a vector to the array.
+			template <typename T> void addArray(const std::vector<T>& valueList)
 			{
 				asArr();
-				addVectorNoCheck(valueList);
+				addArrayNoCheck(valueList);
 			}
-			// Add std::array to array
+			// Append all elements of a std::array to the array.
 			template <typename T, size_t N> void addArray(const std::array<T, N>& valueList)
 			{
 				asArr();
 				addArrayNoCheck(valueList);
 			}
-			// Add C array to array
+			// Append all elements of a C-style array to the array.
 			template <typename T, size_t N> void addArray(const T (&valueList)[N])
 			{
 				asArr();
@@ -218,7 +222,7 @@ namespace wrap
 				addNoCheck(std::forward<Args>(args)...);
 			}
 
-			template <typename T> void addVectorNoCheck(const std::vector<T>& valueList)
+			template <typename T> void addArrayNoCheck(const std::vector<T>& valueList)
 			{
 				for (const auto& value : valueList) addNoCheck(value);
 			}
@@ -289,7 +293,7 @@ namespace wrap
 			}
 		};
 
-		MutDocWrapper() : mutDoc(yyjson_mut_doc_new(nullptr)) // Create empty document
+		MutDocWrapper() : mutDoc(yyjson_mut_doc_new(nullptr))
 		{
 			if (mutDoc) yyjson_mut_doc_set_root(mutDoc, yyjson_mut_obj(mutDoc));
 		}
@@ -323,14 +327,13 @@ namespace wrap
 		yyjson_mut_doc* mutDoc = nullptr;
 	};
 
-	// Custom type conversion
+	// Custom type conversion (specialize fromJson and toJson for your types)
 	template <typename T> T fromJson(const DocWrapper::ValueWrapper&)
 	{
 		static_assert(sizeof(T) == 0, "fromJson not implemented for this type");
 		return T();
 	}
 
-	// Implementation of ValueWrapper::operator T()
 	template <typename T> DocWrapper::ValueWrapper::operator T() const { return fromJson<T>(*this); }
 
 	template <typename T> void toJson(MutDocWrapper::MutValueWrapper&, const T&)
