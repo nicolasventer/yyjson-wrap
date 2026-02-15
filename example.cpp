@@ -57,7 +57,7 @@ int main()
 	p.address = Address{"123 Main St", "New York", "10001"};
 	MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
-	toJson(root, p);
+	root = p;
 	std::string serialized = mutDoc.toString();
 	std::cout << serialized << "\n";
 }

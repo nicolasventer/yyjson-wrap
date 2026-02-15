@@ -349,6 +349,39 @@ TEST_CASE("MutDocWrapper - Custom type serialization")
 }
 
 // ============================================================================
+// Tests for MutValueWrapper assignment (operator=)
+// ============================================================================
+
+TEST_CASE("Assignment - primitives and containers")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+	root = 42;
+	CHECK(root.toString() == "42");
+	root = 3.14;
+	CHECK(root.toString() == "3.14");
+	root = true;
+	CHECK(root.toString() == "true");
+	root = "hi";
+	CHECK(root.toString() == "\"hi\"");  // JSON string includes quotes
+	root = std::vector<int>{1, 2, 3};
+	CHECK(root.toString() == "[1,2,3]");
+	std::array<int, 2> arr = {10, 20};
+	root = arr;
+	CHECK(root.toString() == "[10,20]");
+}
+
+TEST_CASE("Assignment - custom type and overwrite")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+	root = Address{"789 Elm", "Chicago", "60601"};
+	CHECK(root.toString() == "{\"street\":\"789 Elm\",\"city\":\"Chicago\",\"zipCode\":\"60601\"}");
+	root = 999;
+	CHECK(root.toString() == "999");
+}
+
+// ============================================================================
 // Integration Tests
 // ============================================================================
 

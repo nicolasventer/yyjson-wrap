@@ -10,6 +10,7 @@ yyjsonWrap is a **C++ library** that lets you **read and write JSON** and conver
 - Convert between JSON and structured data via `fromJson` / `toJson`
 - Header-only; define `IMPORT_YYJSON_IMPL` in one translation unit to pull in the implementation
 - Optional namespace: define `USE_WRAP_NAMESPACE` to use the `wrap::` namespace
+- Optional extra primitive conversions: define `USE_PRIMITIVE_CONVERSION` for `unsigned int`, `signed char`, `unsigned char`, `unsigned short`, `float` (via `fromJson`/`toJson`)
 - Fast and dependency-free (yyjson is included in the repo)
 
 Note: Performance comes from yyjson; the wrapper adds a small, type-safe C++ layer on top.
@@ -101,7 +102,7 @@ int main()
 	p.address = Address{"123 Main St", "New York", "10001"};
 	MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
-	toJson(root, p);
+	root = p;
 	std::string serialized = mutDoc.toString();
 	std::cout << serialized << "\n";
 }
@@ -201,7 +202,6 @@ public:
     public:
         // Conversion operators
         operator int() const;
-        operator unsigned int() const;
         operator int64_t() const;
         operator uint64_t() const;
         operator double() const;
@@ -211,6 +211,7 @@ public:
         template <typename T, size_t N> operator std::array<T, N>() const;
         template <typename T, size_t N> void fillArray(T (&arr)[N]) const;
         template <typename T> operator T() const;  // Uses fromJson<T>
+        template <typename TTo, typename TFrom> TTo as() const;  // Explicit conversion: second type is the intermediate type
 
         // Access
         ValueWrapper operator[](const char* key) const;
@@ -248,6 +249,19 @@ public:
         template <typename T> void addArray(const std::vector<T>& valueList);
         template <typename T, size_t N> void addArray(const std::array<T, N>& valueList);
         template <typename T, size_t N> void addArray(const T (&valueList)[N]);
+
+        // Assignment: set this value to a primitive, vector, array, or custom type
+        MutValueWrapper& operator=(const int& value);
+        MutValueWrapper& operator=(const int64_t& value);
+        MutValueWrapper& operator=(const uint64_t& value);
+        MutValueWrapper& operator=(const double& value);
+        MutValueWrapper& operator=(const bool& value);
+        MutValueWrapper& operator=(const std::string& value);
+        MutValueWrapper& operator=(const char* value);
+        template <typename T> MutValueWrapper& operator=(const std::vector<T>& value);
+        template <typename T, size_t N> MutValueWrapper& operator=(const std::array<T, N>& value);
+        template <typename T, size_t N> MutValueWrapper& operator=(const T (&value)[N]);
+        template <typename T> MutValueWrapper& operator=(const T& value);
 
         std::string toString() const;
 

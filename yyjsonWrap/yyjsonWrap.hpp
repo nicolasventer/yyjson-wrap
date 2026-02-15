@@ -27,7 +27,6 @@ namespace wrap
 
 			// Conversion operators
 			operator int() const { return yyjson_get_int(val_); }
-			operator unsigned int() const { return static_cast<unsigned int>(yyjson_get_uint(val_)); }
 			operator int64_t() const { return yyjson_get_sint(val_); }
 			operator uint64_t() const { return yyjson_get_uint(val_); }
 			operator double() const { return yyjson_get_real(val_); }
@@ -82,6 +81,8 @@ namespace wrap
 				}
 			}
 			template <typename T> operator T() const; // Custom types: uses fromJson<T>
+			// Explicit conversion, second type is the intermediate type
+			template <typename TTo, typename TFrom> TTo as() const { return static_cast<TTo>(static_cast<TFrom>(*this)); }
 
 			// Object/array access
 			ValueWrapper operator[](const char* key) const { return {yyjson_obj_get(val_, key), doc_}; }
@@ -243,11 +244,68 @@ namespace wrap
 				return result;
 			}
 
+			// Assignment: set this value to a primitive, vector, array, or custom type
+
+			MutValueWrapper& operator=(const int& value)
+			{
+				yyjson_mut_set_int(val_, value);
+				return *this;
+			}
+			MutValueWrapper& operator=(const int64_t& value)
+			{
+				yyjson_mut_set_sint(val_, value);
+				return *this;
+			}
+			MutValueWrapper& operator=(const uint64_t& value)
+			{
+				yyjson_mut_set_uint(val_, value);
+				return *this;
+			}
+			MutValueWrapper& operator=(const double& value)
+			{
+				yyjson_mut_set_real(val_, value);
+				return *this;
+			}
+			MutValueWrapper& operator=(const bool& value)
+			{
+				yyjson_mut_set_bool(val_, value);
+				return *this;
+			}
+			MutValueWrapper& operator=(const std::string& value)
+			{
+				yyjson_mut_set_str(val_, value.c_str());
+				return *this;
+			}
+			MutValueWrapper& operator=(const char* value)
+			{
+				yyjson_mut_set_str(val_, value);
+				return *this;
+			}
+			template <typename T> MutValueWrapper& operator=(const std::vector<T>& value)
+			{
+				val_ = createValue(value);
+				return *this;
+			}
+			template <typename T, size_t N> MutValueWrapper& operator=(const std::array<T, N>& value)
+			{
+				val_ = createValue(value);
+				return *this;
+			}
+			template <typename T, size_t N> MutValueWrapper& operator=(const T (&value)[N])
+			{
+				val_ = createValue(value);
+				return *this;
+			}
+			template <typename T> MutValueWrapper& operator=(const T& value)
+			{
+				toJson(*this, value);
+				return *this;
+			}
+
 			yyjson_mut_val* val_ = nullptr;	   // Direct access to underlying value
 			yyjson_mut_doc* mutDoc_ = nullptr; // Direct access to underlying document
 		private:
 			yyjson_mut_val* createValue(int value) { return yyjson_mut_int(mutDoc_, value); }
-			yyjson_mut_val* createValue(unsigned int value) { return yyjson_mut_uint(mutDoc_, value); }
 			yyjson_mut_val* createValue(int64_t value) { return yyjson_mut_sint(mutDoc_, value); }
 			yyjson_mut_val* createValue(uint64_t value) { return yyjson_mut_uint(mutDoc_, value); }
 			yyjson_mut_val* createValue(double value) { return yyjson_mut_real(mutDoc_, value); }
@@ -346,4 +404,21 @@ namespace wrap
 
 #ifdef USE_WRAP_NAMESPACE
 } // namespace wrap
+#endif
+
+#define PRIMITIVE_CONVERSION(toType, fromType)                                                                                   \
+	template <> toType inline fromJson<toType>(const DocWrapper::ValueWrapper& val) { return val.as<toType, fromType>(); }       \
+	template <> void inline toJson(MutDocWrapper::MutValueWrapper& value, const toType& data)                                    \
+	{                                                                                                                            \
+		value = static_cast<fromType>(data);                                                                                     \
+	}
+
+#ifdef USE_PRIMITIVE_CONVERSION
+
+PRIMITIVE_CONVERSION(unsigned int, uint64_t)
+PRIMITIVE_CONVERSION(signed char, int)
+PRIMITIVE_CONVERSION(unsigned char, uint64_t)
+PRIMITIVE_CONVERSION(unsigned short, int)
+PRIMITIVE_CONVERSION(float, double)
+
 #endif
