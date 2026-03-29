@@ -29,7 +29,7 @@ namespace wrap
 			operator int() const { return yyjson_get_int(val_); }
 			operator int64_t() const { return yyjson_get_sint(val_); }
 			operator uint64_t() const { return yyjson_get_uint(val_); }
-			operator double() const { return yyjson_get_real(val_); }
+			operator double() const { return yyjson_get_num(val_); }
 			operator bool() const { return yyjson_get_bool(val_); }
 			operator std::string() const { return yyjson_get_str(val_); }
 			template <typename T> operator std::vector<T>() const
