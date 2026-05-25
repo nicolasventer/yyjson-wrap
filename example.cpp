@@ -58,6 +58,6 @@ int main()
 	MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
 	root = p;
-	std::string serialized = mutDoc.toString();
+	std::string serialized = mutDoc.toString(EPrettyPrint::PRETTY);
 	std::cout << serialized << "\n";
 }

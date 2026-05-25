@@ -35,7 +35,7 @@
 #   pragma clang diagnostic ignored "-Wunused-label"
 #   pragma clang diagnostic ignored "-Wunused-macros"
 #   pragma clang diagnostic ignored "-Wunused-variable"
-#elif YYJSON_IS_REAL_GCC
+#elif YYJSON_IS_REAL_GCC && yyjson_gcc_available(4, 2, 0)
 #   pragma GCC diagnostic ignored "-Wunused-function"
 #   pragma GCC diagnostic ignored "-Wunused-parameter"
 #   pragma GCC diagnostic ignored "-Wunused-label"
@@ -387,7 +387,7 @@ uint32_t yyjson_version(void) {
 #define U32(hi) ((u32)(hi##UL))
 
 /* Used to cast away (remove) const qualifier. */
-#define constcast(type) (type)(void *)(size_t)(const void *)
+#define constcast yyjson_constcast
 
 /*
  Compiler barriers for single variables.
@@ -2499,9 +2499,11 @@ static void dyn_free(void *ctx_ptr, void *ptr) {
 yyjson_alc *yyjson_alc_dyn_new(void) {
     const yyjson_alc def = YYJSON_DEFAULT_ALC;
     usize hdr_len = sizeof(yyjson_alc) + sizeof(dyn_ctx);
-    yyjson_alc *alc = (yyjson_alc *)def.malloc(def.ctx, hdr_len);
-    dyn_ctx *ctx = (dyn_ctx *)(void *)(alc + 1);
+    yyjson_alc *alc;
+    dyn_ctx *ctx;
+    alc = (yyjson_alc *)def.malloc(def.ctx, hdr_len);
     if (unlikely(!alc)) return NULL;
+    ctx = (dyn_ctx *)(void *)(alc + 1);
     alc->malloc = dyn_malloc;
     alc->realloc = dyn_realloc;
     alc->free = dyn_free;
@@ -2512,9 +2514,10 @@ yyjson_alc *yyjson_alc_dyn_new(void) {
 
 void yyjson_alc_dyn_free(yyjson_alc *alc) {
     const yyjson_alc def = YYJSON_DEFAULT_ALC;
-    dyn_ctx *ctx = (dyn_ctx *)(void *)(alc + 1);
+    dyn_ctx *ctx;
     dyn_chunk *chunk, *next;
     if (unlikely(!alc)) return;
+    ctx = (dyn_ctx *)(void *)(alc + 1);
     for (chunk = ctx->free_list.next; chunk; chunk = next) {
         next = chunk->next;
         def.free(def.ctx, chunk);
@@ -2647,7 +2650,8 @@ yyjson_mut_doc *yyjson_mut_doc_new(const yyjson_alc *alc) {
     return doc;
 }
 
-yyjson_mut_doc *yyjson_doc_mut_copy(yyjson_doc *doc, const yyjson_alc *alc) {
+yyjson_mut_doc *yyjson_doc_mut_copy(const yyjson_doc *doc,
+                                    const yyjson_alc *alc) {
     yyjson_mut_doc *m_doc;
     yyjson_mut_val *m_val;
 
@@ -2663,7 +2667,7 @@ yyjson_mut_doc *yyjson_doc_mut_copy(yyjson_doc *doc, const yyjson_alc *alc) {
     return m_doc;
 }
 
-yyjson_mut_doc *yyjson_mut_doc_mut_copy(yyjson_mut_doc *doc,
+yyjson_mut_doc *yyjson_mut_doc_mut_copy(const yyjson_mut_doc *doc,
                                         const yyjson_alc *alc) {
     yyjson_mut_doc *m_doc;
     yyjson_mut_val *m_val;
@@ -2683,7 +2687,7 @@ yyjson_mut_doc *yyjson_mut_doc_mut_copy(yyjson_mut_doc *doc,
 }
 
 yyjson_mut_val *yyjson_val_mut_copy(yyjson_mut_doc *m_doc,
-                                    yyjson_val *i_vals) {
+                                    const yyjson_val *i_vals) {
     /*
      The immutable object or array stores all sub-values in a contiguous memory,
      We copy them to another contiguous memory as mutable values,
@@ -2698,7 +2702,7 @@ yyjson_mut_val *yyjson_val_mut_copy(yyjson_mut_doc *m_doc,
     i_vals_len = (usize)(unsafe_yyjson_get_next(i_vals) - i_vals);
     m_vals = unsafe_yyjson_mut_val(m_doc, i_vals_len);
     if (!m_vals) return NULL;
-    i_val = i_vals;
+    i_val = constcast(yyjson_val *)i_vals;
     m_val = m_vals;
 
     for (; i_val < i_end; i_val++, m_val++) {
@@ -2748,8 +2752,8 @@ yyjson_mut_val *yyjson_val_mut_copy(yyjson_mut_doc *m_doc,
     return m_vals;
 }
 
-static yyjson_mut_val *unsafe_yyjson_mut_val_mut_copy(yyjson_mut_doc *m_doc,
-                                                      yyjson_mut_val *m_vals) {
+static yyjson_mut_val *unsafe_yyjson_mut_val_mut_copy(
+    yyjson_mut_doc *m_doc, const yyjson_mut_val *m_vals) {
     /*
      The mutable object or array stores all sub-values in a circular linked
      list, so we can traverse them in the same loop. The traversal starts from
@@ -2795,13 +2799,13 @@ static yyjson_mut_val *unsafe_yyjson_mut_val_mut_copy(yyjson_mut_doc *m_doc,
 }
 
 yyjson_mut_val *yyjson_mut_val_mut_copy(yyjson_mut_doc *doc,
-                                        yyjson_mut_val *val) {
+                                        const yyjson_mut_val *val) {
     if (doc && val) return unsafe_yyjson_mut_val_mut_copy(doc, val);
     return NULL;
 }
 
 /* Count the number of values and the total length of the strings. */
-static void yyjson_mut_stat(yyjson_mut_val *val,
+static void yyjson_mut_stat(const yyjson_mut_val *val,
                             usize *val_sum, usize *str_sum) {
     yyjson_type type = unsafe_yyjson_get_type(val);
     *val_sum += 1;
@@ -2827,7 +2831,7 @@ static void yyjson_mut_stat(yyjson_mut_val *val,
 
 /* Copy mutable values to immutable value pool. */
 static usize yyjson_imut_copy(yyjson_val **val_ptr, char **buf_ptr,
-                              yyjson_mut_val *mval) {
+                              const yyjson_mut_val *mval) {
     yyjson_val *val = *val_ptr;
     yyjson_type type = unsafe_yyjson_get_type(mval);
     if (type == YYJSON_TYPE_ARR || type == YYJSON_TYPE_OBJ) {
@@ -2866,13 +2870,13 @@ static usize yyjson_imut_copy(yyjson_val **val_ptr, char **buf_ptr,
     }
 }
 
-yyjson_doc *yyjson_mut_doc_imut_copy(yyjson_mut_doc *mdoc,
+yyjson_doc *yyjson_mut_doc_imut_copy(const yyjson_mut_doc *mdoc,
                                      const yyjson_alc *alc) {
     if (!mdoc) return NULL;
     return yyjson_mut_val_imut_copy(mdoc->root, alc);
 }
 
-yyjson_doc *yyjson_mut_val_imut_copy(yyjson_mut_val *mval,
+yyjson_doc *yyjson_mut_val_imut_copy(const yyjson_mut_val *mval,
                                      const yyjson_alc *alc) {
     usize val_num = 0, str_sum = 0, hdr_size, buf_size;
     yyjson_doc *doc = NULL;
@@ -2913,9 +2917,9 @@ yyjson_doc *yyjson_mut_val_imut_copy(yyjson_mut_val *mval,
     return doc;
 }
 
-static_inline bool unsafe_yyjson_num_equals(void *lhs, void *rhs) {
-    yyjson_val_uni *luni = &((yyjson_val *)lhs)->uni;
-    yyjson_val_uni *runi = &((yyjson_val *)rhs)->uni;
+static_inline bool unsafe_yyjson_num_equals(const void *lhs, const void *rhs) {
+    const yyjson_val_uni *luni = &((const yyjson_val *)lhs)->uni;
+    const yyjson_val_uni *runi = &((const yyjson_val *)rhs)->uni;
     yyjson_subtype lt = unsafe_yyjson_get_subtype(lhs);
     yyjson_subtype rt = unsafe_yyjson_get_subtype(rhs);
     if (lt == rt) return luni->u64 == runi->u64;
@@ -2928,14 +2932,14 @@ static_inline bool unsafe_yyjson_num_equals(void *lhs, void *rhs) {
     return false;
 }
 
-static_inline bool unsafe_yyjson_str_equals(void *lhs, void *rhs) {
+static_inline bool unsafe_yyjson_str_equals(const void *lhs, const void *rhs) {
     usize len = unsafe_yyjson_get_len(lhs);
     if (len != unsafe_yyjson_get_len(rhs)) return false;
     return !memcmp(unsafe_yyjson_get_str(lhs),
                    unsafe_yyjson_get_str(rhs), len);
 }
 
-bool unsafe_yyjson_equals(yyjson_val *lhs, yyjson_val *rhs) {
+bool unsafe_yyjson_equals(const yyjson_val *lhs, const yyjson_val *rhs) {
     yyjson_type type = unsafe_yyjson_get_type(lhs);
     if (type != unsafe_yyjson_get_type(rhs)) return false;
 
@@ -2990,7 +2994,8 @@ bool unsafe_yyjson_equals(yyjson_val *lhs, yyjson_val *rhs) {
     }
 }
 
-bool unsafe_yyjson_mut_equals(yyjson_mut_val *lhs, yyjson_mut_val *rhs) {
+bool unsafe_yyjson_mut_equals(const yyjson_mut_val *lhs,
+                              const yyjson_mut_val *rhs) {
     yyjson_type type = unsafe_yyjson_get_type(lhs);
     if (type != unsafe_yyjson_get_type(rhs)) return false;
 
@@ -3000,7 +3005,7 @@ bool unsafe_yyjson_mut_equals(yyjson_mut_val *lhs, yyjson_mut_val *rhs) {
             if (len != unsafe_yyjson_get_len(rhs)) return false;
             if (len > 0) {
                 yyjson_mut_obj_iter iter;
-                yyjson_mut_obj_iter_init(rhs, &iter);
+                yyjson_mut_obj_iter_init(constcast(yyjson_mut_val *)rhs, &iter);
                 lhs = (yyjson_mut_val *)lhs->uni.ptr;
                 while (len-- > 0) {
                     rhs = yyjson_mut_obj_iter_getn(&iter, lhs->uni.str,
@@ -4166,6 +4171,7 @@ digi_finish:
         return_f64(dbl);
     }
 #endif
+    if (unlikely(sig == 0)) return_f64_bin(0);
 
     /*
      Fast path 2:
@@ -4747,7 +4753,6 @@ static_inline bool read_str_opt(u8 quo, u8 **ptr, u8 *eof, yyjson_read_flag flg,
     u8 *hdr = *ptr + 1;
     u8 **end = ptr;
     u8 *src = hdr, *dst = NULL, *pos;
-    u16 hi, lo;
     u32 uni, tmp;
 
     /* Resume incremental parsing. */
@@ -5079,7 +5084,6 @@ static_noinline bool read_str_id(u8 **ptr, u8 *eof, yyjson_read_flag flg,
     u8 *hdr = *ptr;
     u8 **end = ptr;
     u8 *src = hdr, *dst = NULL;
-    u16 hi, lo;
     u32 uni, tmp;
 
     /* add null-terminator for previous raw string */
@@ -5466,7 +5470,7 @@ arr_val_begin:
         cur++;
         if (likely(ctn_len == 0)) goto arr_end;
         if (has_allow(TRAILING_COMMAS)) goto arr_end;
-        while (*cur != ',') cur--;
+        do { cur--; } while (*cur != ',');
         goto fail_trailing_comma;
     }
     if (char_is_space(*cur)) {
@@ -5560,7 +5564,7 @@ obj_key_begin:
         cur++;
         if (likely(ctn_len == 0)) goto obj_end;
         if (has_allow(TRAILING_COMMAS)) goto obj_end;
-        while (*cur != ',') cur--;
+        do { cur--; } while (*cur != ',');
         goto fail_trailing_comma;
     }
     if (char_is_space(*cur)) {
@@ -5908,7 +5912,7 @@ arr_val_begin:
         cur++;
         if (likely(ctn_len == 0)) goto arr_end;
         if (has_allow(TRAILING_COMMAS)) goto arr_end;
-        while (*cur != ',') cur--;
+        do { cur--; } while (*cur != ',');
         goto fail_trailing_comma;
     }
     if (char_is_space(*cur)) {
@@ -6020,7 +6024,7 @@ obj_key_begin:
         cur++;
         if (likely(ctn_len == 0)) goto obj_end;
         if (has_allow(TRAILING_COMMAS)) goto obj_end;
-        while (*cur != ',') cur--;
+        do { cur--; } while (*cur != ',');
         goto fail_trailing_comma;
     }
     if (char_is_space(*cur)) {
@@ -6366,7 +6370,7 @@ yyjson_doc *yyjson_read_fp(FILE *file,
         if (fseek(file, 0, SEEK_END) == 0) file_size = ftell(file);
         /* reset to original position, may fail */
         if (fseek(file, file_pos, SEEK_SET) != 0) file_size = 0;
-        /* get file size from current postion to end */
+        /* get file size from current position to end */
         if (file_size > 0) file_size -= file_pos;
     }
 
@@ -6856,7 +6860,7 @@ arr_val_continue:
     if (*cur == ']') {
         cur++;
         if (likely(ctn_len == 0)) goto arr_end;
-        while (*cur != ',') cur--;
+        do { cur--; } while (*cur != ',');
         goto fail_trailing_comma;
     }
     if (char_is_space(*cur)) {
@@ -6938,7 +6942,7 @@ obj_key_continue:
     if (likely(*cur == '}')) {
         cur++;
         if (likely(ctn_len == 0)) goto obj_end;
-        while (*cur != ',') cur--;
+        do { cur--; } while (*cur != ',');
         goto fail_trailing_comma;
     }
     if (char_is_space(*cur)) {
@@ -7069,7 +7073,7 @@ doc_end:
 
 unexpected_end:
     err->pos = len;
-    /* if no nore data, stop the incr read */
+    /* if no more data, stop the incr read */
     if (unlikely(len >= state->buf_len)) {
         err->code = YYJSON_READ_ERROR_UNEXPECTED_END;
         err->msg = MSG_NOT_END;
@@ -7649,7 +7653,7 @@ static_inline void f32_bin_to_dec(u32 sig_raw, u32 exp_raw,
     w1_inside = (upper >= 4 * s + 4);
     mid = 4 * s + 2;
     round_up = (vb > mid) || (vb == mid && (s & 1) != 0);
-    *sig_dec = s + static_cast<u32>((u1_inside != w1_inside) ? w1_inside : round_up);
+    *sig_dec = s + ((u1_inside != w1_inside) ? w1_inside : round_up);
     *exp_dec = k;
 }
 
@@ -7760,7 +7764,7 @@ static_inline void f64_bin_to_dec(u64 sig_raw, u32 exp_raw,
     w1_inside = (upper >= 4 * s + 4);
     mid = 4 * s + 2;
     round_up = (vb > mid) || (vb == mid && (s & 1) != 0);
-    *sig_dec = s + static_cast<u32>((u1_inside != w1_inside) ? w1_inside : round_up);
+    *sig_dec = s + ((u1_inside != w1_inside) ? w1_inside : round_up);
     *exp_dec = k;
 }
 
@@ -7895,7 +7899,7 @@ static_noinline u8 *write_f32_raw(u8 *buf, u64 raw_f64,
             num_hdr = buf + pre_ofs;
             num_end = write_u32_len_7_to_9_trim(sig_dec, num_hdr);
 
-            /* seperate these digits to leave a space for dot */
+            /* separate these digits to leave a space for dot */
             num_sep_pos = no_pre_zero ? dot_ofs : 0;
             num_sep = num_hdr + num_sep_pos;
             byte_move_8(num_sep + no_pre_zero, num_sep);
@@ -8018,7 +8022,7 @@ static_noinline u8 *write_f64_raw(u8 *buf, u64 raw, yyjson_write_flag flg) {
             num_hdr = buf + pre_ofs;
             num_end = write_u64_len_16_to_17_trim(sig_dec, num_hdr);
 
-            /* seperate these digits to leave a space for dot */
+            /* separate these digits to leave a space for dot */
             num_sep_pos = no_pre_zero ? dot_ofs : 0;
             num_sep = num_hdr + num_sep_pos;
             byte_move_16(num_sep + no_pre_zero, num_sep);
@@ -8178,7 +8182,7 @@ static_noinline u8 *write_f64_raw_fixed(u8 *buf, u64 raw, yyjson_write_flag flg,
             num_hdr = buf + pre_ofs;
             num_end = write_u64_len_1_to_17(sig_dec, num_hdr);
 
-            /* seperate these digits to leave a space for dot */
+            /* separate these digits to leave a space for dot */
             num_sep_pos = no_pre_zero ? dot_ofs : -dot_ofs;
             num_sep = buf + num_sep_pos;
             byte_move_16(num_sep + 1, num_sep);
@@ -8586,6 +8590,78 @@ static const u8 esc_hex_char_table[512] = {
     'F', 'C', 'F', 'D', 'F', 'E', 'F', 'F'
 };
 
+/** Lowercase variant of esc_hex_char_table. Selected at write time
+    when the caller passes YYJSON_WRITE_LOWERCASE_HEX. Matches the
+    \uXXXX case used by ext/json (PHP), Python json, Node.js
+    JSON.stringify, Go encoding/json, Ruby json. */
+yyjson_align(2)
+static const u8 esc_hex_char_table_lower[512] = {
+    '0', '0', '0', '1', '0', '2', '0', '3',
+    '0', '4', '0', '5', '0', '6', '0', '7',
+    '0', '8', '0', '9', '0', 'a', '0', 'b',
+    '0', 'c', '0', 'd', '0', 'e', '0', 'f',
+    '1', '0', '1', '1', '1', '2', '1', '3',
+    '1', '4', '1', '5', '1', '6', '1', '7',
+    '1', '8', '1', '9', '1', 'a', '1', 'b',
+    '1', 'c', '1', 'd', '1', 'e', '1', 'f',
+    '2', '0', '2', '1', '2', '2', '2', '3',
+    '2', '4', '2', '5', '2', '6', '2', '7',
+    '2', '8', '2', '9', '2', 'a', '2', 'b',
+    '2', 'c', '2', 'd', '2', 'e', '2', 'f',
+    '3', '0', '3', '1', '3', '2', '3', '3',
+    '3', '4', '3', '5', '3', '6', '3', '7',
+    '3', '8', '3', '9', '3', 'a', '3', 'b',
+    '3', 'c', '3', 'd', '3', 'e', '3', 'f',
+    '4', '0', '4', '1', '4', '2', '4', '3',
+    '4', '4', '4', '5', '4', '6', '4', '7',
+    '4', '8', '4', '9', '4', 'a', '4', 'b',
+    '4', 'c', '4', 'd', '4', 'e', '4', 'f',
+    '5', '0', '5', '1', '5', '2', '5', '3',
+    '5', '4', '5', '5', '5', '6', '5', '7',
+    '5', '8', '5', '9', '5', 'a', '5', 'b',
+    '5', 'c', '5', 'd', '5', 'e', '5', 'f',
+    '6', '0', '6', '1', '6', '2', '6', '3',
+    '6', '4', '6', '5', '6', '6', '6', '7',
+    '6', '8', '6', '9', '6', 'a', '6', 'b',
+    '6', 'c', '6', 'd', '6', 'e', '6', 'f',
+    '7', '0', '7', '1', '7', '2', '7', '3',
+    '7', '4', '7', '5', '7', '6', '7', '7',
+    '7', '8', '7', '9', '7', 'a', '7', 'b',
+    '7', 'c', '7', 'd', '7', 'e', '7', 'f',
+    '8', '0', '8', '1', '8', '2', '8', '3',
+    '8', '4', '8', '5', '8', '6', '8', '7',
+    '8', '8', '8', '9', '8', 'a', '8', 'b',
+    '8', 'c', '8', 'd', '8', 'e', '8', 'f',
+    '9', '0', '9', '1', '9', '2', '9', '3',
+    '9', '4', '9', '5', '9', '6', '9', '7',
+    '9', '8', '9', '9', '9', 'a', '9', 'b',
+    '9', 'c', '9', 'd', '9', 'e', '9', 'f',
+    'a', '0', 'a', '1', 'a', '2', 'a', '3',
+    'a', '4', 'a', '5', 'a', '6', 'a', '7',
+    'a', '8', 'a', '9', 'a', 'a', 'a', 'b',
+    'a', 'c', 'a', 'd', 'a', 'e', 'a', 'f',
+    'b', '0', 'b', '1', 'b', '2', 'b', '3',
+    'b', '4', 'b', '5', 'b', '6', 'b', '7',
+    'b', '8', 'b', '9', 'b', 'a', 'b', 'b',
+    'b', 'c', 'b', 'd', 'b', 'e', 'b', 'f',
+    'c', '0', 'c', '1', 'c', '2', 'c', '3',
+    'c', '4', 'c', '5', 'c', '6', 'c', '7',
+    'c', '8', 'c', '9', 'c', 'a', 'c', 'b',
+    'c', 'c', 'c', 'd', 'c', 'e', 'c', 'f',
+    'd', '0', 'd', '1', 'd', '2', 'd', '3',
+    'd', '4', 'd', '5', 'd', '6', 'd', '7',
+    'd', '8', 'd', '9', 'd', 'a', 'd', 'b',
+    'd', 'c', 'd', 'd', 'd', 'e', 'd', 'f',
+    'e', '0', 'e', '1', 'e', '2', 'e', '3',
+    'e', '4', 'e', '5', 'e', '6', 'e', '7',
+    'e', '8', 'e', '9', 'e', 'a', 'e', 'b',
+    'e', 'c', 'e', 'd', 'e', 'e', 'e', 'f',
+    'f', '0', 'f', '1', 'f', '2', 'f', '3',
+    'f', '4', 'f', '5', 'f', '6', 'f', '7',
+    'f', '8', 'f', '9', 'f', 'a', 'f', 'b',
+    'f', 'c', 'f', 'd', 'f', 'e', 'f', 'f'
+};
+
 /** Escaped single character table. (generate with misc/make_tables.c) */
 yyjson_align(2)
 static const u8 esc_single_char_table[512] = {
@@ -8655,6 +8731,16 @@ static const u8 esc_single_char_table[512] = {
     ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '
 };
 
+/** Returns the hex digit table to use for \uXXXX escapes. The
+    LOWERCASE_HEX flag selects lowercase 'a'..'f' to match the
+    ext/json / Python json / Node.js JSON.stringify / Go encoding/json
+    convention; default is uppercase 'A'..'F'. */
+static_inline const u8 *get_hex_table_with_flag(yyjson_write_flag flg) {
+    return has_flg(LOWERCASE_HEX)
+        ? esc_hex_char_table_lower
+        : esc_hex_char_table;
+}
+
 /** Returns the encode table with options. */
 static_inline const char_enc_type *get_enc_table_with_flag(
     yyjson_write_flag flg) {
@@ -8720,9 +8806,11 @@ static_inline u8 *write_str_noesc(u8 *cur, const u8 *str, usize str_len) {
  */
 static_inline u8 *write_str(u8 *cur, bool esc, bool inv,
                             const u8 *str, usize str_len,
-                            const char_enc_type *enc_table) {
-    /* The replacement character U+FFFD, used to indicate invalid character. */
-    const v32 rep = {{ 'F', 'F', 'F', 'D' }};
+                            const char_enc_type *enc_table,
+                            const u8 *hex_table) {
+    /* The replacement character U+FFFD, used to indicate invalid character.
+       Looked up via hex_table so that LOWERCASE_HEX produces "fffd" while
+       the default produces "FFFD". */
     const v32 pre = {{ '\\', 'u', '0', '0' }};
 
     const u8 *src = str;
@@ -8839,7 +8927,7 @@ copy_utf8:
         }
         case CHAR_ENC_ESC_1: {
             byte_copy_4(cur + 0, &pre);
-            byte_copy_2(cur + 4, &esc_hex_char_table[*src * 2]);
+            byte_copy_2(cur + 4, &hex_table[*src * 2]);
             cur += 6;
             src += 1;
             goto copy_utf8;
@@ -8855,8 +8943,8 @@ copy_utf8:
             u = (u16)(((u16)(src[0] & 0x1F) << 6) |
                       ((u16)(src[1] & 0x3F) << 0));
             byte_copy_2(cur + 0, &pre);
-            byte_copy_2(cur + 2, &esc_hex_char_table[(u >> 8) * 2]);
-            byte_copy_2(cur + 4, &esc_hex_char_table[(u & 0xFF) * 2]);
+            byte_copy_2(cur + 2, &hex_table[(u >> 8) * 2]);
+            byte_copy_2(cur + 4, &hex_table[(u & 0xFF) * 2]);
             cur += 6;
             src += 2;
             goto copy_utf8;
@@ -8872,8 +8960,8 @@ copy_utf8:
                       ((u16)(src[1] & 0x3F) << 6) |
                       ((u16)(src[2] & 0x3F) << 0));
             byte_copy_2(cur + 0, &pre);
-            byte_copy_2(cur + 2, &esc_hex_char_table[(u >> 8) * 2]);
-            byte_copy_2(cur + 4, &esc_hex_char_table[(u & 0xFF) * 2]);
+            byte_copy_2(cur + 2, &hex_table[(u >> 8) * 2]);
+            byte_copy_2(cur + 4, &hex_table[(u & 0xFF) * 2]);
             cur += 6;
             src += 3;
             goto copy_utf8;
@@ -8892,11 +8980,11 @@ copy_utf8:
             hi = (u >> 10) + 0xD800;
             lo = (u & 0x3FF) + 0xDC00;
             byte_copy_2(cur + 0, &pre);
-            byte_copy_2(cur + 2, &esc_hex_char_table[(hi >> 8) * 2]);
-            byte_copy_2(cur + 4, &esc_hex_char_table[(hi & 0xFF) * 2]);
+            byte_copy_2(cur + 2, &hex_table[(hi >> 8) * 2]);
+            byte_copy_2(cur + 4, &hex_table[(hi & 0xFF) * 2]);
             byte_copy_2(cur + 6, &pre);
-            byte_copy_2(cur + 8, &esc_hex_char_table[(lo >> 8) * 2]);
-            byte_copy_2(cur + 10, &esc_hex_char_table[(lo & 0xFF) * 2]);
+            byte_copy_2(cur + 8, &hex_table[(lo >> 8) * 2]);
+            byte_copy_2(cur + 10, &hex_table[(lo & 0xFF) * 2]);
             cur += 12;
             src += 4;
             goto copy_utf8;
@@ -8923,7 +9011,12 @@ err_cpy:
 err_esc:
     if (!inv) return NULL;
     byte_copy_2(cur + 0, &pre);
-    byte_copy_4(cur + 2, &rep);
+    /* U+FFFD = 0xFFFD, written as two pairs from hex_table so that
+       LOWERCASE_HEX produces "fffd". Replaces a single byte_copy_4
+       from a hardcoded uppercase "FFFD" v32; same total output, one
+       extra load on the (rare) invalid-UTF-8-with-ALLOW path. */
+    byte_copy_2(cur + 2, &hex_table[0xFF * 2]);
+    byte_copy_2(cur + 4, &hex_table[0xFD * 2]);
     cur += 6;
     src += 1;
     goto copy_utf8;
@@ -9053,6 +9146,7 @@ static_inline u8 *write_root_single(yyjson_val *val,
     usize str_len;
     const u8 *str_ptr;
     const char_enc_type *enc_table = get_enc_table_with_flag(flg);
+    const u8 *hex_table = get_hex_table_with_flag(flg);
     bool cpy = (enc_table == enc_table_cpy);
     bool esc = has_flg(ESCAPE_UNICODE) != 0;
     bool inv = has_allow(INVALID_UNICODE) != 0;
@@ -9076,7 +9170,7 @@ static_inline u8 *write_root_single(yyjson_val *val,
             if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
                 cur = write_str_noesc(cur, str_ptr, str_len);
             } else {
-                cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table);
+                cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table, hex_table);
                 if (unlikely(!cur)) goto fail_str;
             }
             break;
@@ -9180,6 +9274,7 @@ static_inline u8 *write_root_minify(const yyjson_val *root,
     usize alc_len, alc_inc, ctx_len, ext_len, str_len;
     const u8 *str_ptr;
     const char_enc_type *enc_table = get_enc_table_with_flag(flg);
+    const u8 *hex_table = get_hex_table_with_flag(flg);
     bool cpy = (enc_table == enc_table_cpy);
     bool esc = has_flg(ESCAPE_UNICODE) != 0;
     bool inv = has_allow(INVALID_UNICODE) != 0;
@@ -9220,7 +9315,7 @@ val_begin:
         if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
             cur = write_str_noesc(cur, str_ptr, str_len);
         } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table);
+            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table, hex_table);
             if (unlikely(!cur)) goto fail_str;
         }
         *cur++ = is_key ? ':' : ',';
@@ -9368,6 +9463,7 @@ static_inline u8 *write_root_pretty(const yyjson_val *root,
     usize alc_len, alc_inc, ctx_len, ext_len, str_len, level;
     const u8 *str_ptr;
     const char_enc_type *enc_table = get_enc_table_with_flag(flg);
+    const u8 *hex_table = get_hex_table_with_flag(flg);
     bool cpy = (enc_table == enc_table_cpy);
     bool esc = has_flg(ESCAPE_UNICODE) != 0;
     bool inv = has_allow(INVALID_UNICODE) != 0;
@@ -9413,7 +9509,7 @@ val_begin:
         if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
             cur = write_str_noesc(cur, str_ptr, str_len);
         } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table);
+            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table, hex_table);
             if (unlikely(!cur)) goto fail_str;
         }
         *cur++ = is_key ? ':' : ',';
@@ -9777,6 +9873,7 @@ static_inline u8 *mut_write_root_minify(const yyjson_mut_val *root,
     usize alc_len, alc_inc, ctx_len, ext_len, str_len;
     const u8 *str_ptr;
     const char_enc_type *enc_table = get_enc_table_with_flag(flg);
+    const u8 *hex_table = get_hex_table_with_flag(flg);
     bool cpy = (enc_table == enc_table_cpy);
     bool esc = has_flg(ESCAPE_UNICODE) != 0;
     bool inv = has_allow(INVALID_UNICODE) != 0;
@@ -9818,7 +9915,7 @@ val_begin:
         if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
             cur = write_str_noesc(cur, str_ptr, str_len);
         } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table);
+            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table, hex_table);
             if (unlikely(!cur)) goto fail_str;
         }
         *cur++ = is_key ? ':' : ',';
@@ -9971,6 +10068,7 @@ static_inline u8 *mut_write_root_pretty(const yyjson_mut_val *root,
     usize alc_len, alc_inc, ctx_len, ext_len, str_len, level;
     const u8 *str_ptr;
     const char_enc_type *enc_table = get_enc_table_with_flag(flg);
+    const u8 *hex_table = get_hex_table_with_flag(flg);
     bool cpy = (enc_table == enc_table_cpy);
     bool esc = has_flg(ESCAPE_UNICODE) != 0;
     bool inv = has_allow(INVALID_UNICODE) != 0;
@@ -10017,7 +10115,7 @@ val_begin:
         if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
             cur = write_str_noesc(cur, str_ptr, str_len);
         } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table);
+            cur = write_str(cur, esc, inv, str_ptr, str_len, enc_table, hex_table);
             if (unlikely(!cur)) goto fail_str;
         }
         *cur++ = is_key ? ':' : ',';
@@ -10410,7 +10508,7 @@ static_inline bool ptr_token_eq(void *key,
  @param esc   number of escaped characters in this token
  @return value at index, or NULL if token is not index or index is out of range
  */
-static_inline yyjson_val *ptr_arr_get(yyjson_val *arr, const char *token,
+static_inline yyjson_val *ptr_arr_get(const yyjson_val *arr, const char *token,
                                       usize len, usize esc) {
     yyjson_val *val = unsafe_yyjson_get_first(arr);
     usize num = unsafe_yyjson_get_len(arr), idx = 0;
@@ -10433,7 +10531,7 @@ static_inline yyjson_val *ptr_arr_get(yyjson_val *arr, const char *token,
  @param esc   [in] number of escaped characters in this token
  @return value associated with the token, or NULL if no value
  */
-static_inline yyjson_val *ptr_obj_get(yyjson_val *obj, const char *token,
+static_inline yyjson_val *ptr_obj_get(const yyjson_val *obj, const char *token,
                                       usize len, usize esc) {
     yyjson_val *key = unsafe_yyjson_get_first(obj);
     usize num = unsafe_yyjson_get_len(obj);
@@ -10454,7 +10552,7 @@ static_inline yyjson_val *ptr_obj_get(yyjson_val *obj, const char *token,
  @param last  [out] whether index is last
  @return value at index, or NULL if token is not index or index is out of range
  */
-static_inline yyjson_mut_val *ptr_mut_arr_get(yyjson_mut_val *arr,
+static_inline yyjson_mut_val *ptr_mut_arr_get(const yyjson_mut_val *arr,
                                               const char *token,
                                               usize len, usize esc,
                                               yyjson_mut_val **pre,
@@ -10484,7 +10582,7 @@ static_inline yyjson_mut_val *ptr_mut_arr_get(yyjson_mut_val *arr,
  @param pre   [out] previous (sibling) key of the returned value's key
  @return value associated with the token, or NULL if no value
  */
-static_inline yyjson_mut_val *ptr_mut_obj_get(yyjson_mut_val *obj,
+static_inline yyjson_mut_val *ptr_mut_obj_get(const yyjson_mut_val *obj,
                                               const char *token,
                                               usize len, usize esc,
                                               yyjson_mut_val **pre) {
@@ -10547,7 +10645,7 @@ static_inline yyjson_mut_val *ptr_new_key(const char *token,
 #define return_err_alloc(_ret) \
     return_err(_ret, MEMORY_ALLOCATION, 0, "failed to create value")
 
-yyjson_val *unsafe_yyjson_ptr_getx(yyjson_val *val,
+yyjson_val *unsafe_yyjson_ptr_getx(const yyjson_val *val,
                                    const char *ptr, size_t ptr_len,
                                    yyjson_ptr_err *err) {
 
@@ -10567,12 +10665,12 @@ yyjson_val *unsafe_yyjson_ptr_getx(yyjson_val *val,
             val = NULL;
         }
         if (!val) return_err_resolve(NULL, token - hdr);
-        if (ptr == end) return val;
+        if (ptr == end) return constcast(yyjson_val *)val;
     }
 }
 
 yyjson_mut_val *unsafe_yyjson_mut_ptr_getx(
-    yyjson_mut_val *val, const char *ptr, size_t ptr_len,
+    const yyjson_mut_val *val, const char *ptr, size_t ptr_len,
     yyjson_ptr_ctx *ctx, yyjson_ptr_err *err) {
 
     const char *hdr = ptr, *end = ptr + ptr_len, *token;
@@ -10584,7 +10682,7 @@ yyjson_mut_val *unsafe_yyjson_mut_ptr_getx(
     while (true) {
         token = ptr_next_token(&ptr, end, &len, &esc);
         if (unlikely(!token)) return_err_syntax(NULL, ptr - hdr);
-        ctn = val;
+        ctn = constcast(yyjson_mut_val *)val;
         type = unsafe_yyjson_get_type(val);
         if (type == YYJSON_TYPE_OBJ) {
             val = ptr_mut_obj_get(val, token, len, esc, &pre);
@@ -10601,7 +10699,7 @@ yyjson_mut_val *unsafe_yyjson_mut_ptr_getx(
             }
         }
         if (!val) return_err_resolve(NULL, token - hdr);
-        if (ptr == end) return val;
+        if (ptr == end) return constcast(yyjson_mut_val *)val;
     }
 }
 
@@ -10860,8 +10958,8 @@ static patch_op patch_op_get(yyjson_val *op) {
     root, _ptr->uni.str, _ptr##_len, _val, NULL, &err->ptr)
 
 yyjson_mut_val *yyjson_patch(yyjson_mut_doc *doc,
-                             yyjson_val *orig,
-                             yyjson_val *patch,
+                             const yyjson_val *orig,
+                             const yyjson_val *patch,
                              yyjson_patch_err *err) {
 
     yyjson_mut_val *root;
@@ -10981,8 +11079,8 @@ yyjson_mut_val *yyjson_patch(yyjson_mut_doc *doc,
 }
 
 yyjson_mut_val *yyjson_mut_patch(yyjson_mut_doc *doc,
-                                 yyjson_mut_val *orig,
-                                 yyjson_mut_val *patch,
+                                 const yyjson_mut_val *orig,
+                                 const yyjson_mut_val *patch,
                                  yyjson_patch_err *err) {
     yyjson_mut_val *root, *obj;
     yyjson_mut_arr_iter iter;
@@ -11001,7 +11099,7 @@ yyjson_mut_val *yyjson_mut_patch(yyjson_mut_doc *doc,
     if (unlikely(!root)) return_err_copy();
 
     /* iterate through the patch array */
-    yyjson_mut_arr_iter_init(patch, &iter);
+    yyjson_mut_arr_iter_init(constcast(yyjson_mut_val *)patch, &iter);
     while ((obj = yyjson_mut_arr_iter_next(&iter))) {
         patch_op op_enum;
         yyjson_mut_val *op, *path, *from = NULL, *value;
@@ -11118,8 +11216,8 @@ yyjson_mut_val *yyjson_mut_patch(yyjson_mut_doc *doc,
  *============================================================================*/
 
 yyjson_mut_val *yyjson_merge_patch(yyjson_mut_doc *doc,
-                                   yyjson_val *orig,
-                                   yyjson_val *patch) {
+                                   const yyjson_val *orig,
+                                   const yyjson_val *patch) {
     usize idx, max;
     yyjson_val *key, *orig_val, *patch_val, local_orig;
     yyjson_mut_val *builder, *mut_key, *mut_val, *merged_val;
@@ -11133,9 +11231,9 @@ yyjson_mut_val *yyjson_merge_patch(yyjson_mut_doc *doc,
 
     memset(&local_orig, 0, sizeof(local_orig));
     if (!yyjson_is_obj(orig)) {
+        local_orig.tag = builder->tag;
+        local_orig.uni = builder->uni;
         orig = &local_orig;
-        orig->tag = builder->tag;
-        orig->uni = builder->uni;
     }
 
     /* If orig is contributing, copy any items not modified by the patch */
@@ -11170,8 +11268,8 @@ yyjson_mut_val *yyjson_merge_patch(yyjson_mut_doc *doc,
 }
 
 yyjson_mut_val *yyjson_mut_merge_patch(yyjson_mut_doc *doc,
-                                       yyjson_mut_val *orig,
-                                       yyjson_mut_val *patch) {
+                                       const yyjson_mut_val *orig,
+                                       const yyjson_mut_val *patch) {
     usize idx, max;
     yyjson_mut_val *key, *orig_val, *patch_val, local_orig;
     yyjson_mut_val *builder, *mut_key, *mut_val, *merged_val;
@@ -11185,9 +11283,9 @@ yyjson_mut_val *yyjson_mut_merge_patch(yyjson_mut_doc *doc,
 
     memset(&local_orig, 0, sizeof(local_orig));
     if (!yyjson_mut_is_obj(orig)) {
+        local_orig.tag = builder->tag;
+        local_orig.uni = builder->uni;
         orig = &local_orig;
-        orig->tag = builder->tag;
-        orig->uni = builder->uni;
     }
 
     /* If orig is contributing, copy any items not modified by the patch */
