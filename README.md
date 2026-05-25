@@ -11,6 +11,7 @@ yyjsonWrap is a **C++ library** that lets you **read and write JSON** and conver
 - Header-only; define `IMPORT_YYJSON_IMPL` in one translation unit to pull in the implementation
 - Optional pretty-printing when serializing JSON via `EPrettyPrint`
 - Optional extra primitive conversions: define `USE_PRIMITIVE_CONVERSION` for `unsigned int`, `signed char`, `unsigned char`, `unsigned short`, `float` (via `fromJson`/`toJson`)
+- Built-in `std::map` and `std::vector<std::pair>` conversion for JSON objects
 - Fast and dependency-free (yyjson is included in the repo)
 
 Note: Performance comes from yyjson; the wrapper adds a small, type-safe C++ layer on top.
@@ -44,6 +45,7 @@ Content of [example.cpp](example.cpp)
 
 ```cpp
 #include <iostream>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -67,6 +69,7 @@ namespace
 		int age;
 		std::optional<Address> address;
 		std::vector<std::string> hobbies;
+		std::map<std::string, std::string> metadata;
 	};
 } // namespace
 
@@ -77,7 +80,7 @@ template <> void toJson(MutValueWrapper& value, const Address& a)
 
 template <> void toJson(MutValueWrapper& value, const Person& p)
 {
-	value.set("name", p.name, "age", p.age, "hobbies", p.hobbies);
+	value.set("name", p.name, "age", p.age, "hobbies", p.hobbies, "metadata", p.metadata);
 	if (p.address.has_value()) value.set("address", p.address.value());
 }
 
@@ -85,8 +88,9 @@ template <> Address fromJson(const ValueWrapper& doc) { return Address{doc["stre
 
 template <> Person fromJson(const ValueWrapper& doc)
 {
-	Person res{doc["name"], doc["age"], {}, doc["hobbies"]};
+	Person res{doc["name"], doc["age"], {}, doc["hobbies"], {}};
 	if (doc.hasKey("address")) res.address = Address(doc["address"]);
+	if (doc.hasKey("metadata")) res.metadata = static_cast<std::map<std::string, std::string>>(doc["metadata"]);
 	return res;
 }
 
@@ -96,13 +100,18 @@ int main()
     {
         "name": "Alice",
         "age": 25,
-        "hobbies": ["reading", "coding"]
+        "hobbies": ["reading", "coding"],
+        "metadata": {
+            "department": "Engineering",
+            "level": "Senior"
+        }
     }
     )";
 	const DocWrapper doc(json);
 	const ValueWrapper value = doc;
 	Person p = value;
 	p.address = Address{"123 Main St", "New York", "10001"};
+	p.metadata["team"] = "Platform";
 	const MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
 	root = p;
@@ -121,6 +130,11 @@ int main()
         "reading",
         "coding"
     ],
+    "metadata": {
+        "department": "Engineering",
+        "level": "Senior",
+        "team": "Platform"
+    },
     "address": {
         "street": "123 Main St",
         "city": "New York",
@@ -164,6 +178,9 @@ if (root.hasKey("address")) {
 
 // Access array elements
 ValueWrapper firstHobby = root["hobbies"][0];
+
+// Read JSON objects as maps
+std::map<std::string, std::string> metadata = root["metadata"];
 ```
 
 ### Writing JSON
@@ -177,11 +194,16 @@ MutValueWrapper root = mutDoc;
 root.set("name", "Alice", "age", 25);
 
 // Add to arrays
-root.asArr().add("item1", "item2", "item3");
+root.add("item1", "item2", "item3");
 
 // Or add vectors
 std::vector<std::string> hobbies = {"reading", "coding"};
 root.set("hobbies", hobbies);
+
+// Set or merge maps
+std::map<std::string, std::string> metadata = {{"department", "Engineering"}};
+root.set("metadata", metadata);
+root.addMap(std::map<std::string, int>{{"a", 1}, {"b", 2}});
 
 // Convert to string (compact by default)
 std::string json = mutDoc.toString();
@@ -243,8 +265,10 @@ public:
         template <typename T> operator std::vector<T>() const;
         template <typename T, size_t N> operator std::array<T, N>() const;
         template <typename T, size_t N> void fillArray(T (&arr)[N]) const;
+        template <typename T, typename U> operator std::map<T, U>() const;
+        template <typename T, typename U> operator std::vector<std::pair<T, U>>() const;
         template <typename T> operator T() const;  // Uses fromJson<T>
-        template <typename TTo, typename TFrom> TTo as() const;  // Explicit conversion: second type is the intermediate type
+        template <typename TTo, typename TFrom> TTo internal_cast() const;  // Explicit conversion via an intermediate type
 
         // Access
         ValueWrapper operator[](const char* key) const;
@@ -276,6 +300,8 @@ public:
         // Object: set key-value pairs. Does NOT override existing keys.
         template <typename... Args> void set(Args&&... args);
         template <typename T> void setNoCheck(const char* key, const T& value);
+        template <typename T, typename U> void addMap(const std::map<T, U>& valueList);
+        template <typename T, typename U> void addMap(const std::vector<std::pair<T, U>>& valueList);
 
         // Array: add elements
         template <typename... Args> void add(Args&&... args);
@@ -294,6 +320,8 @@ public:
         template <typename T> MutValueWrapper& operator=(const std::vector<T>& value);
         template <typename T, size_t N> MutValueWrapper& operator=(const std::array<T, N>& value);
         template <typename T, size_t N> MutValueWrapper& operator=(const T (&value)[N]);
+        template <typename T, typename U> MutValueWrapper& operator=(const std::map<T, U>& value);
+        template <typename T, typename U> MutValueWrapper& operator=(const std::vector<std::pair<T, U>>& value);
         template <typename T> MutValueWrapper& operator=(const T& value);
 
         std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;

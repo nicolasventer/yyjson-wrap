@@ -25,7 +25,34 @@ enum class EPrettyPrint : uint8_t
 // NOLINTBEGIN(google-explicit-constructor, hicpp-explicit-conversions, hicpp-no-malloc, cppcoreguidelines-no-malloc,
 // cppcoreguidelines-owning-memory, cppcoreguidelines-avoid-c-arrays)
 
-// Reading JSON
+/**
+ * @brief Owns an immutable yyjson document parsed from a JSON string.
+ *
+ * @par Example
+ * @code{.cpp}
+ * struct Person {
+ *     std::string name;
+ *     int age;
+ *     std::vector<std::string> hobbies;
+ * };
+ *
+ * template <> Person fromJson(const ValueWrapper& doc) {
+ *     return Person{doc["name"], doc["age"], doc["hobbies"]};
+ * }
+ *
+ * const std::string json = R"({"name":"Alice","age":25,"hobbies":["reading","coding"]})";
+ * DocWrapper doc(json);
+ * ValueWrapper root = doc;
+ *
+ * Person p = root; // uses fromJson<Person> via implicit conversion
+ *
+ * std::string name = root["name"];
+ * int age = root["age"];
+ * std::vector<std::string> hobbies = root["hobbies"];
+ *
+ * std::string pretty = doc.toString(EPrettyPrint::Pretty);
+ * @endcode
+ */
 class DocWrapper
 {
 public:
@@ -122,7 +149,7 @@ public:
 		}
 		template <typename T> operator T() const; // Custom types: uses fromJson<T>
 		// Explicit conversion, second type is the intermediate type
-		template <typename TTo, typename TFrom> TTo as() const { return static_cast<TTo>(static_cast<TFrom>(*this)); }
+		template <typename TTo, typename TFrom> TTo internal_cast() const { return static_cast<TTo>(static_cast<TFrom>(*this)); }
 
 		// Object/array access
 		ValueWrapper operator[](const char* key) const { return {yyjson_obj_get(val_, key), doc_}; }
@@ -184,7 +211,34 @@ public:
 	yyjson_val* root = nullptr;
 };
 
-// Writing JSON
+/**
+ * @brief Owns a mutable yyjson document for building or modifying JSON.
+ *
+ * @par Example
+ * @code{.cpp}
+ * struct Person {
+ *     std::string name;
+ *     int age;
+ *     std::vector<std::string> hobbies;
+ * };
+ *
+ * template <> void toJson(MutValueWrapper& value, const Person& p) {
+ *     value.set("name", p.name, "age", p.age, "hobbies", p.hobbies);
+ * }
+ *
+ * MutDocWrapper mutDoc;
+ * MutValueWrapper root = mutDoc;
+ *
+ * Person p{"Alice", 25, {"reading", "coding"}};
+ * root = p; // uses toJson<Person> via assignment
+ *
+ * root.set("score", 100);
+ * root.addMap(std::map<std::string, int>{{"bonus", 10}});
+ *
+ * std::string compact = mutDoc.toString();
+ * std::string pretty = mutDoc.toString(EPrettyPrint::Pretty);
+ * @endcode
+ */
 class MutDocWrapper
 {
 public:
@@ -474,11 +528,14 @@ using ValueWrapper = DocWrapper::ValueWrapper;
 using MutValueWrapper = MutDocWrapper::MutValueWrapper;
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PRIMITIVE_CONVERSION(toType, fromType)                                                                              \
-	template <>(toType) inline fromJson<toType>(const DocWrapper::ValueWrapper& val) { return val.as<toType, fromType>(); } \
-	template <> void inline toJson(MutDocWrapper::MutValueWrapper& value, const toType& data)                               \
-	{                                                                                                                       \
-		value = static_cast<fromType>(data);                                                                                \
+#define PRIMITIVE_CONVERSION(toType, fromType)                                                \
+	template <>(toType) inline fromJson<toType>(const DocWrapper::ValueWrapper& val)          \
+	{                                                                                         \
+		return val.internal_cast<toType, fromType>();                                         \
+	}                                                                                         \
+	template <> void inline toJson(MutDocWrapper::MutValueWrapper& value, const toType& data) \
+	{                                                                                         \
+		value = static_cast<fromType>(data);                                                  \
 	}
 
 #ifdef USE_PRIMITIVE_CONVERSION
