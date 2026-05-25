@@ -38,6 +38,8 @@ Note: Performance comes from yyjson; the wrapper adds a small, type-safe C++ lay
 
 ## Example
 
+Build the example with `build.bat` or `./build.sh`.
+
 Content of [example.cpp](example.cpp)
 
 ```cpp
@@ -50,20 +52,23 @@ Content of [example.cpp](example.cpp)
 #include "yyjsonWrap/yyjsonWrap.hpp"
 #undef IMPORT_YYJSON_IMPL
 
-struct Address
+namespace
 {
-	std::string street;
-	std::string city;
-	std::string zipCode;
-};
+	struct Address
+	{
+		std::string street;
+		std::string city;
+		std::string zipCode;
+	};
 
-struct Person
-{
-	std::string name;
-	int age;
-	std::optional<Address> address;
-	std::vector<std::string> hobbies;
-};
+	struct Person
+	{
+		std::string name;
+		int age;
+		std::optional<Address> address;
+		std::vector<std::string> hobbies;
+	};
+} // namespace
 
 template <> void toJson(MutValueWrapper& value, const Address& a)
 {
@@ -87,24 +92,23 @@ template <> Person fromJson(const ValueWrapper& doc)
 
 int main()
 {
-	std::string json = R"(
+	const std::string json = R"(
     {
         "name": "Alice",
         "age": 25,
         "hobbies": ["reading", "coding"]
     }
     )";
-	DocWrapper doc(json);
-	ValueWrapper value = doc;
+	const DocWrapper doc(json);
+	const ValueWrapper value = doc;
 	Person p = value;
 	p.address = Address{"123 Main St", "New York", "10001"};
-	MutDocWrapper mutDoc;
+	const MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
 	root = p;
-	std::string serialized = mutDoc.toString(EPrettyPrint::PRETTY);
+	const std::string serialized = mutDoc.toString(EPrettyPrint::Pretty);
 	std::cout << serialized << "\n";
 }
-
 ```
 
 **Output:**
@@ -127,7 +131,13 @@ int main()
 
 ## Testing
 
-Run the tests from the project root (see `tests/` and `tests/exec_test.bat` for your setup).
+Tests use [doctest](https://github.com/doctest/doctest) and live under `tests/`. From the project root:
+
+```bat
+tests\exec_test.bat
+```
+
+This compiles `tests/testMain.cpp` and runs the resulting executable. A coverage script is also available at `tests/exec_cov.bat`.
 
 ## Usage
 
@@ -177,10 +187,10 @@ root.set("hobbies", hobbies);
 std::string json = mutDoc.toString();
 
 // Pretty-print with 4-space indentation
-std::string pretty = mutDoc.toString(EPrettyPrint::PRETTY);
+std::string pretty = mutDoc.toString(EPrettyPrint::Pretty);
 
 // Pretty-print with 2-space indentation
-std::string compactPretty = mutDoc.toString(EPrettyPrint::PRETTY_TWO_SPACES);
+std::string compactPretty = mutDoc.toString(EPrettyPrint::PrettyTwoSpaces);
 ```
 
 ### Custom Types
@@ -202,6 +212,13 @@ template <> MyType fromJson(const ValueWrapper& doc)
 ### Main API
 
 ```cpp
+enum class EPrettyPrint : uint8_t
+{
+    None = YYJSON_WRITE_NOFLAG,
+    Pretty = YYJSON_WRITE_PRETTY,
+    PrettyTwoSpaces = YYJSON_WRITE_PRETTY_TWO_SPACES
+};
+
 // Reading JSON
 class DocWrapper
 {
@@ -210,7 +227,7 @@ public:
     DocWrapper(const char* data, size_t len);
     DocWrapper(const std::string& data);
     operator ValueWrapper() const;
-    std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::NONE) const;
+    std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;
     // Move-only; doc/root are internal.
 
     class ValueWrapper
@@ -235,7 +252,7 @@ public:
         ValueWrapper operator[](int index) const;
         bool hasKey(const char* key) const;
 
-        std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::NONE) const;
+        std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;
 
         yyjson_val* val_;
         yyjson_doc* doc_;
@@ -248,7 +265,7 @@ class MutDocWrapper
 public:
     MutDocWrapper();  // Empty document with root object
     operator MutValueWrapper() const;
-    std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::NONE) const;
+    std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;
 
     class MutValueWrapper
     {
@@ -279,7 +296,7 @@ public:
         template <typename T, size_t N> MutValueWrapper& operator=(const T (&value)[N]);
         template <typename T> MutValueWrapper& operator=(const T& value);
 
-        std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::NONE) const;
+        std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;
 
         yyjson_mut_val* val_;     // Direct access to underlying value
         yyjson_mut_doc* mutDoc_;  // Direct access to underlying document

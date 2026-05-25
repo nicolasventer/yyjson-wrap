@@ -1,6 +1,12 @@
 -xc++
+-std=c++17
 -Wall
 -Wextra
 -Wpedantic
--std=c++17
+-Wconversion
+-Wshadow
+-Wsign-conversion
+-Wswitch-enum
+-Wnull-dereference
+-Wno-gnu-zero-variadic-macro-arguments
 -Wno-c2y-extensions

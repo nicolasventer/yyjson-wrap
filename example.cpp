@@ -7,20 +7,23 @@
 #include "yyjsonWrap/yyjsonWrap.hpp"
 #undef IMPORT_YYJSON_IMPL
 
-struct Address
+namespace
 {
-	std::string street;
-	std::string city;
-	std::string zipCode;
-};
+	struct Address
+	{
+		std::string street;
+		std::string city;
+		std::string zipCode;
+	};
 
-struct Person
-{
-	std::string name;
-	int age;
-	std::optional<Address> address;
-	std::vector<std::string> hobbies;
-};
+	struct Person
+	{
+		std::string name;
+		int age;
+		std::optional<Address> address;
+		std::vector<std::string> hobbies;
+	};
+} // namespace
 
 template <> void toJson(MutValueWrapper& value, const Address& a)
 {
@@ -44,20 +47,20 @@ template <> Person fromJson(const ValueWrapper& doc)
 
 int main()
 {
-	std::string json = R"(
+	const std::string json = R"(
     {
         "name": "Alice",
         "age": 25,
         "hobbies": ["reading", "coding"]
     }
     )";
-	DocWrapper doc(json);
-	ValueWrapper value = doc;
+	const DocWrapper doc(json);
+	const ValueWrapper value = doc;
 	Person p = value;
 	p.address = Address{"123 Main St", "New York", "10001"};
-	MutDocWrapper mutDoc;
+	const MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
 	root = p;
-	std::string serialized = mutDoc.toString(EPrettyPrint::PRETTY);
+	const std::string serialized = mutDoc.toString(EPrettyPrint::Pretty);
 	std::cout << serialized << "\n";
 }
