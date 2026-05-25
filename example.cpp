@@ -1,4 +1,5 @@
 #include <iostream>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@ namespace
 		int age;
 		std::optional<Address> address;
 		std::vector<std::string> hobbies;
+		std::map<std::string, std::string> metadata;
 	};
 } // namespace
 
@@ -32,7 +34,7 @@ template <> void toJson(MutValueWrapper& value, const Address& a)
 
 template <> void toJson(MutValueWrapper& value, const Person& p)
 {
-	value.set("name", p.name, "age", p.age, "hobbies", p.hobbies);
+	value.set("name", p.name, "age", p.age, "hobbies", p.hobbies, "metadata", p.metadata);
 	if (p.address.has_value()) value.set("address", p.address.value());
 }
 
@@ -40,8 +42,9 @@ template <> Address fromJson(const ValueWrapper& doc) { return Address{doc["stre
 
 template <> Person fromJson(const ValueWrapper& doc)
 {
-	Person res{doc["name"], doc["age"], {}, doc["hobbies"]};
+	Person res{doc["name"], doc["age"], {}, doc["hobbies"], {}};
 	if (doc.hasKey("address")) res.address = Address(doc["address"]);
+	if (doc.hasKey("metadata")) res.metadata = static_cast<std::map<std::string, std::string>>(doc["metadata"]);
 	return res;
 }
 
@@ -51,13 +54,18 @@ int main()
     {
         "name": "Alice",
         "age": 25,
-        "hobbies": ["reading", "coding"]
+        "hobbies": ["reading", "coding"],
+        "metadata": {
+            "department": "Engineering",
+            "level": "Senior"
+        }
     }
     )";
 	const DocWrapper doc(json);
 	const ValueWrapper value = doc;
 	Person p = value;
 	p.address = Address{"123 Main St", "New York", "10001"};
+	p.metadata["team"] = "Platform";
 	const MutDocWrapper mutDoc;
 	MutValueWrapper root = mutDoc;
 	root = p;

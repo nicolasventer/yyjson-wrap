@@ -1,6 +1,12 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
+#include <array>
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+
 #define IMPORT_YYJSON_IMPL
 #include "../yyjsonWrap/yyjsonWrap.hpp"
 #undef IMPORT_YYJSON_IMPL
@@ -148,6 +154,36 @@ TEST_CASE("DocWrapper - Access array elements by index")
 	CHECK(static_cast<int>(root["items"][2]) == 30);
 }
 
+TEST_CASE("DocWrapper - Read map")
+{
+	std::string json = R"({"metadata":{"department":"Engineering","level":"Senior"}})";
+	DocWrapper doc(json);
+	ValueWrapper root = doc;
+
+	std::map<std::string, std::string> metadata = root["metadata"];
+	CHECK(metadata == std::map<std::string, std::string>{{"department", "Engineering"}, {"level", "Senior"}});
+}
+
+TEST_CASE("DocWrapper - Read map with numeric values")
+{
+	std::string json = R"({"scores":{"alice":10,"bob":20}})";
+	DocWrapper doc(json);
+	ValueWrapper root = doc;
+
+	std::map<std::string, int> scores = root["scores"];
+	CHECK(scores == std::map<std::string, int>{{"alice", 10}, {"bob", 20}});
+}
+
+TEST_CASE("DocWrapper - Read map from non-object yields empty map")
+{
+	std::string json = R"({"notAMap":[1,2,3]})";
+	DocWrapper doc(json);
+	ValueWrapper root = doc;
+
+	std::map<std::string, int> empty = root["notAMap"];
+	CHECK(empty.empty());
+}
+
 TEST_CASE("DocWrapper - Nested objects")
 {
 	std::string json = R"({"person":{"name":"Bob","age":30}})";
@@ -293,6 +329,56 @@ TEST_CASE("MutDocWrapper - Add C-style array to document")
 	CHECK(result == std::vector<int>{1, 2, 3});
 }
 
+TEST_CASE("MutDocWrapper - Set map on document")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	std::map<std::string, std::string> metadata = {{"department", "Engineering"}, {"level", "Senior"}};
+	root.set("metadata", metadata);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	std::map<std::string, std::string> result = readRoot["metadata"];
+	CHECK(result == metadata);
+}
+
+TEST_CASE("MutDocWrapper - addMap merges into object")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	root.set("existing", "keep");
+	std::map<std::string, int> extra = {{"a", 1}, {"b", 2}};
+	root.addMap(extra);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	CHECK(static_cast<std::string>(readRoot["existing"]) == "keep");
+	CHECK(static_cast<int>(readRoot["a"]) == 1);
+	CHECK(static_cast<int>(readRoot["b"]) == 2);
+}
+
+TEST_CASE("MutDocWrapper - addMap from vector of pairs")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	std::vector<std::pair<std::string, int>> pairs = {{"x", 10}, {"y", 20}};
+	root.addMap(pairs);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	CHECK(static_cast<int>(readRoot["x"]) == 10);
+	CHECK(static_cast<int>(readRoot["y"]) == 20);
+}
+
 TEST_CASE("MutDocWrapper - Serialization with C-style array")
 {
 	ScoreCard original;
@@ -363,12 +449,15 @@ TEST_CASE("Assignment - primitives and containers")
 	root = true;
 	CHECK(root.toString() == "true");
 	root = "hi";
-	CHECK(root.toString() == "\"hi\"");  // JSON string includes quotes
+	CHECK(root.toString() == "\"hi\""); // JSON string includes quotes
 	root = std::vector<int>{1, 2, 3};
 	CHECK(root.toString() == "[1,2,3]");
 	std::array<int, 2> arr = {10, 20};
 	root = arr;
 	CHECK(root.toString() == "[10,20]");
+	std::map<std::string, int> m = {{"one", 1}, {"two", 2}};
+	root = m;
+	CHECK(root.toString() == "{\"one\":1,\"two\":2}");
 }
 
 TEST_CASE("Assignment - custom type and overwrite")
@@ -419,6 +508,22 @@ TEST_CASE("Roundtrip - Custom types")
 	Address result = readRoot;
 
 	CHECK(result == addr);
+}
+
+TEST_CASE("Roundtrip - Map")
+{
+	std::map<std::string, std::string> original = {{"department", "Engineering"}, {"team", "Platform"}};
+
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+	root.set("metadata", original);
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	std::map<std::string, std::string> result = readRoot["metadata"];
+	CHECK(result == original);
 }
 
 TEST_CASE("Complex nested structure")

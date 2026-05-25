@@ -4,7 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "./yyjson/yyjson.h"
@@ -88,6 +90,36 @@ public:
 				arr[i++] = static_cast<T>(elem);
 			}
 		}
+		template <typename T, typename U> operator std::map<T, U>() const
+		{
+			std::map<T, U> res;
+			if (yyjson_is_obj(val_))
+			{
+				yyjson_obj_iter iter = yyjson_obj_iter_with(val_);
+				yyjson_val *key, *val;
+				while ((key = yyjson_obj_iter_next(&iter)))
+				{
+					val = yyjson_obj_iter_get_val(key);
+					res[static_cast<T>(ValueWrapper(key, doc_))] = static_cast<U>(ValueWrapper(val, doc_));
+				}
+			}
+			return res;
+		}
+		template <typename T, typename U> operator std::vector<std::pair<T, U>>() const
+		{
+			std::vector<std::pair<T, U>> res;
+			if (yyjson_is_obj(val_))
+			{
+				yyjson_obj_iter iter = yyjson_obj_iter_with(val_);
+				yyjson_val *key, *val;
+				while ((key = yyjson_obj_iter_next(&iter)))
+				{
+					val = yyjson_obj_iter_get_val(key);
+					res.emplace_back({static_cast<T>(key), static_cast<U>(val)});
+				}
+			}
+			return res;
+		}
 		template <typename T> operator T() const; // Custom types: uses fromJson<T>
 		// Explicit conversion, second type is the intermediate type
 		template <typename TTo, typename TFrom> TTo as() const { return static_cast<TTo>(static_cast<TFrom>(*this)); }
@@ -168,12 +200,23 @@ public:
 			if (!yyjson_mut_is_obj(val_)) yyjson_mut_set_obj(val_);
 			return *this;
 		}
-
 		// Set key-value pairs (variadic). Does not override existing keys; add only.
 		template <typename... Args> void set(Args&&... args)
 		{
 			asObj();
 			setNoCheck(std::forward<Args>(args)...);
+		}
+		// Append all elements of a map to the object.
+		template <typename T, typename U> void addMap(const std::map<T, U>& valueList)
+		{
+			asObj();
+			for (const auto& [key, value] : valueList) setNoCheck(key.c_str(), value);
+		}
+		// Append all elements of a vector of pairs to the object.
+		template <typename T, typename U> void addMap(const std::vector<std::pair<T, U>>& valueList)
+		{
+			asObj();
+			for (const auto& [key, value] : valueList) setNoCheck(key.c_str(), value);
 		}
 
 		void setNoCheck() {}
@@ -204,19 +247,19 @@ public:
 		template <typename T> void addArray(const std::vector<T>& valueList)
 		{
 			asArr();
-			addArrayNoCheck(valueList);
+			for (const auto& value : valueList) addNoCheck(value);
 		}
 		// Append all elements of a std::array to the array.
 		template <typename T, size_t N> void addArray(const std::array<T, N>& valueList)
 		{
 			asArr();
-			addArrayNoCheck(valueList);
+			for (const auto& value : valueList) addNoCheck(value);
 		}
 		// Append all elements of a C-style array to the array.
 		template <typename T, size_t N> void addArray(const T (&valueList)[N])
 		{
 			asArr();
-			addArrayNoCheck(valueList);
+			for (size_t i = 0; i < N; ++i) addNoCheck(valueList[i]);
 		}
 
 		void addNoCheck() {}
@@ -229,19 +272,6 @@ public:
 		{
 			addNoCheck(value);
 			addNoCheck(std::forward<Args>(args)...);
-		}
-
-		template <typename T> void addArrayNoCheck(const std::vector<T>& valueList)
-		{
-			for (const auto& value : valueList) addNoCheck(value);
-		}
-		template <typename T, size_t N> void addArrayNoCheck(const std::array<T, N>& valueList)
-		{
-			for (const auto& value : valueList) addNoCheck(value);
-		}
-		template <typename T, size_t N> void addArrayNoCheck(const T (&valueList)[N])
-		{
-			for (size_t i = 0; i < N; ++i) addNoCheck(valueList[i]);
 		}
 
 		std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const
@@ -304,6 +334,16 @@ public:
 			val_ = createValue(value);
 			return *this;
 		}
+		template <typename T, typename U> MutValueWrapper& operator=(const std::map<T, U>& value)
+		{
+			val_ = createValue(value);
+			return *this;
+		}
+		template <typename T, typename U> MutValueWrapper& operator=(const std::vector<std::pair<T, U>>& value)
+		{
+			val_ = createValue(value);
+			return *this;
+		}
 		template <typename T> MutValueWrapper& operator=(const T& value)
 		{
 			toJson(*this, value);
@@ -349,6 +389,26 @@ public:
 				yyjson_mut_arr_append(arr, val);
 			}
 			return arr;
+		}
+		template <typename T, typename U> yyjson_mut_val* createValue(const std::map<T, U>& value)
+		{
+			yyjson_mut_val* obj = yyjson_mut_obj(mutDoc_);
+			for (const auto& [key, value] : value)
+			{
+				yyjson_mut_val* val = createValue(value);
+				yyjson_mut_obj_add_val(mutDoc_, obj, key.c_str(), val);
+			}
+			return obj;
+		}
+		template <typename T, typename U> yyjson_mut_val* createValue(const std::vector<std::pair<T, U>>& value)
+		{
+			yyjson_mut_val* obj = yyjson_mut_obj(mutDoc_);
+			for (const auto& [key, value] : value)
+			{
+				yyjson_mut_val* val = createValue(value);
+				yyjson_mut_obj_add_val(mutDoc_, obj, key.c_str(), val);
+			}
+			return obj;
 		}
 		template <typename T> yyjson_mut_val* createValue(const T& value)
 		{
