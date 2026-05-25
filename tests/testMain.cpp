@@ -86,6 +86,20 @@ TEST_CASE("DocWrapper - Parse simple JSON object")
 	CHECK_FALSE(root.hasKey("nonexistent"));
 }
 
+TEST_CASE("DocWrapper - Parse JSON with comments")
+{
+	std::string json = R"({
+		// user info
+		"name": "Alice",
+		"age": 25 /* years */
+	})";
+	DocWrapper doc(json, EReadFlag::AllowComments);
+	ValueWrapper root = doc;
+
+	CHECK(static_cast<std::string>(root["name"]) == "Alice");
+	CHECK(static_cast<int>(root["age"]) == 25);
+}
+
 TEST_CASE("DocWrapper - Read primitive types")
 {
 	std::string json = R"({"intVal":42,"doubleVal":3.14,"boolVal":true,"stringVal":"hello"})";

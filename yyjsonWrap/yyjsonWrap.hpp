@@ -22,6 +22,17 @@ enum class EPrettyPrint : uint8_t
 	PrettyTwoSpaces = YYJSON_WRITE_PRETTY_TWO_SPACES
 };
 
+namespace EReadFlag // NOLINT(readability-identifier-naming)
+{
+	enum Type : uint8_t // NOLINT(readability-identifier-naming)
+	{
+		None = YYJSON_READ_NOFLAG,
+		AllowTrailingCommas = YYJSON_READ_ALLOW_TRAILING_COMMAS,
+		AllowComments = YYJSON_READ_ALLOW_COMMENTS,
+		AllowCommentsAndTrailingCommas = AllowComments | AllowTrailingCommas,
+	};
+} // namespace EReadFlag
+
 // NOLINTBEGIN(google-explicit-constructor, hicpp-explicit-conversions, hicpp-no-malloc, cppcoreguidelines-no-malloc,
 // cppcoreguidelines-owning-memory, cppcoreguidelines-avoid-c-arrays)
 
@@ -172,8 +183,14 @@ public:
 
 	DocWrapper() = default;
 	// Parse JSON from string
-	DocWrapper(const char* data, size_t len) : doc(yyjson_read(data, len, 0)), root(yyjson_doc_get_root(doc)) {}
-	DocWrapper(const std::string& data) : doc(yyjson_read(data.c_str(), data.length(), 0)), root(yyjson_doc_get_root(doc)) {}
+	DocWrapper(const char* data, size_t len, EReadFlag::Type readFlag = EReadFlag::None) :
+		doc(yyjson_read(data, len, readFlag)), root(yyjson_doc_get_root(doc))
+	{
+	}
+	DocWrapper(const std::string& data, EReadFlag::Type readFlag = EReadFlag::None) :
+		doc(yyjson_read(data.c_str(), data.length(), readFlag)), root(yyjson_doc_get_root(doc))
+	{
+	}
 	DocWrapper(const DocWrapper&) = delete;
 	DocWrapper& operator=(const DocWrapper&) = delete;
 	DocWrapper(DocWrapper&& other) noexcept : doc(other.doc), root(other.root)

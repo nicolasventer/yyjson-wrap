@@ -10,6 +10,7 @@ yyjsonWrap is a **C++ library** that lets you **read and write JSON** and conver
 - Convert between JSON and structured data via `fromJson` / `toJson`
 - Header-only; define `IMPORT_YYJSON_IMPL` in one translation unit to pull in the implementation
 - Optional pretty-printing when serializing JSON via `EPrettyPrint`
+- Optional read flags when parsing JSON via `EReadFlag` (trailing commas, comments)
 - Optional extra primitive conversions: define `USE_PRIMITIVE_CONVERSION` for `unsigned int`, `signed char`, `unsigned char`, `unsigned short`, `float` (via `fromJson`/`toJson`)
 - Built-in `std::map` and `std::vector<std::pair>` conversion for JSON objects
 - Fast and dependency-free (yyjson is included in the repo)
@@ -163,6 +164,9 @@ _The usage is not exhaustive._
 // Parse JSON from string
 DocWrapper doc(jsonString);
 
+// Parse JSON with comments and/or trailing commas
+DocWrapper relaxedDoc(jsonString, EReadFlag::AllowCommentsAndTrailingCommas);
+
 // Access values
 ValueWrapper root = doc;
 ValueWrapper name = root["name"];
@@ -241,13 +245,24 @@ enum class EPrettyPrint : uint8_t
     PrettyTwoSpaces = YYJSON_WRITE_PRETTY_TWO_SPACES
 };
 
+namespace EReadFlag
+{
+    enum Type : uint8_t
+    {
+        None = YYJSON_READ_NOFLAG,
+        AllowTrailingCommas = YYJSON_READ_ALLOW_TRAILING_COMMAS,
+        AllowComments = YYJSON_READ_ALLOW_COMMENTS,
+        AllowCommentsAndTrailingCommas = AllowComments | AllowTrailingCommas,
+    };
+}
+
 // Reading JSON
 class DocWrapper
 {
 public:
     // Parse JSON from string or buffer
-    DocWrapper(const char* data, size_t len);
-    DocWrapper(const std::string& data);
+    DocWrapper(const char* data, size_t len, EReadFlag::Type readFlag = EReadFlag::None);
+    DocWrapper(const std::string& data, EReadFlag::Type readFlag = EReadFlag::None);
     operator ValueWrapper() const;
     std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;
     // Move-only; doc/root are internal.
