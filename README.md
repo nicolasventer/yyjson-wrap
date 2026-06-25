@@ -325,11 +325,11 @@ public:
         template <typename T, size_t N> void addArray(const T (&valueList)[N]);
 
         // Assignment: set this value to a primitive, vector, array, or custom type
-        MutValueWrapper& operator=(const int& value);
-        MutValueWrapper& operator=(const int64_t& value);
-        MutValueWrapper& operator=(const uint64_t& value);
-        MutValueWrapper& operator=(const double& value);
-        MutValueWrapper& operator=(const bool& value);
+        MutValueWrapper& operator=(int value);
+        MutValueWrapper& operator=(int64_t value);
+        MutValueWrapper& operator=(uint64_t value);
+        MutValueWrapper& operator=(double value);
+        MutValueWrapper& operator=(bool value);
         MutValueWrapper& operator=(const std::string& value);
         MutValueWrapper& operator=(const char* value);
         template <typename T> MutValueWrapper& operator=(const std::vector<T>& value);

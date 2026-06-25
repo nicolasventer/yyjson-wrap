@@ -355,39 +355,39 @@ public:
 
 		// Assignment: set this value to a primitive, vector, array, or custom type
 
-		MutValueWrapper& operator=(const int& value)
+		MutValueWrapper& operator=(int value)
 		{
 			yyjson_mut_set_int(val_, value);
 			return *this;
 		}
-		MutValueWrapper& operator=(const int64_t& value)
+		MutValueWrapper& operator=(int64_t value)
 		{
 			yyjson_mut_set_sint(val_, value);
 			return *this;
 		}
-		MutValueWrapper& operator=(const uint64_t& value)
+		MutValueWrapper& operator=(uint64_t value)
 		{
 			yyjson_mut_set_uint(val_, value);
 			return *this;
 		}
-		MutValueWrapper& operator=(const double& value)
+		MutValueWrapper& operator=(double value)
 		{
 			yyjson_mut_set_real(val_, value);
 			return *this;
 		}
-		MutValueWrapper& operator=(const bool& value)
+		MutValueWrapper& operator=(bool value)
 		{
 			yyjson_mut_set_bool(val_, value);
 			return *this;
 		}
 		MutValueWrapper& operator=(const std::string& value)
 		{
-			yyjson_mut_set_str(val_, value.c_str());
+			val_ = createValue(value);
 			return *this;
 		}
 		MutValueWrapper& operator=(const char* value)
 		{
-			yyjson_mut_set_str(val_, value);
+			val_ = createValue(value);
 			return *this;
 		}
 		template <typename T> MutValueWrapper& operator=(const std::vector<T>& value)
@@ -464,9 +464,9 @@ public:
 		template <typename T, typename U> yyjson_mut_val* createValue(const std::map<T, U>& value)
 		{
 			yyjson_mut_val* obj = yyjson_mut_obj(mutDoc_);
-			for (const auto& [key, value] : value)
+			for (const auto& [key, v] : value)
 			{
-				yyjson_mut_val* val = createValue(value);
+				yyjson_mut_val* val = createValue(v);
 				yyjson_mut_obj_add_val(mutDoc_, obj, key.c_str(), val);
 			}
 			return obj;
@@ -474,9 +474,9 @@ public:
 		template <typename T, typename U> yyjson_mut_val* createValue(const std::vector<std::pair<T, U>>& value)
 		{
 			yyjson_mut_val* obj = yyjson_mut_obj(mutDoc_);
-			for (const auto& [key, value] : value)
+			for (const auto& [key, v] : value)
 			{
-				yyjson_mut_val* val = createValue(value);
+				yyjson_mut_val* val = createValue(v);
 				yyjson_mut_obj_add_val(mutDoc_, obj, key.c_str(), val);
 			}
 			return obj;
@@ -486,7 +486,7 @@ public:
 			yyjson_mut_val* obj = yyjson_mut_obj(mutDoc_);
 			MutValueWrapper wrapper(obj, mutDoc_);
 			toJson(wrapper, value);
-			return obj;
+			return wrapper.val_;
 		}
 	};
 
