@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,18 @@ struct Person
 	bool operator==(const Person& other) const { return name == other.name && age == other.age && hobbies == other.hobbies; }
 };
 
+struct PersonWithOptional
+{
+	std::string name;
+	std::optional<Address> address;
+	std::optional<int> score;
+
+	bool operator==(const PersonWithOptional& other) const
+	{
+		return name == other.name && address == other.address && score == other.score;
+	}
+};
+
 struct ScoreCard
 {
 	static constexpr size_t N = 3;
@@ -59,9 +73,19 @@ template <> void toJson(MutValueWrapper& value, const Person& p)
 	value.set("name", p.name, "age", p.age, "hobbies", p.hobbies);
 }
 
+template <> void toJson(MutValueWrapper& value, const PersonWithOptional& p)
+{
+	value.set("name", p.name, "address", p.address, "score", p.score);
+}
+
 template <> Address fromJson(const ValueWrapper& doc) { return Address{doc["street"], doc["city"], doc["zipCode"]}; }
 
 template <> Person fromJson(const ValueWrapper& doc) { return Person{doc["name"], doc["age"], doc["hobbies"]}; }
+
+template <> PersonWithOptional fromJson(const ValueWrapper& doc)
+{
+	return PersonWithOptional{doc["name"], doc["address"].asOptional<Address>(), doc["score"].asOptional<int>()};
+}
 
 template <> void toJson(MutValueWrapper& value, const ScoreCard& w) { value.set("label", w.label, "scores", w.scores); }
 template <> ScoreCard fromJson(const ValueWrapper& doc)
@@ -482,6 +506,112 @@ TEST_CASE("Assignment - custom type and overwrite")
 	CHECK(root.toString() == "{\"street\":\"789 Elm\",\"city\":\"Chicago\",\"zipCode\":\"60601\"}");
 	root = 999;
 	CHECK(root.toString() == "999");
+}
+
+// ============================================================================
+// Tests for std::optional
+// ============================================================================
+
+TEST_CASE("DocWrapper - asOptional present, missing, and null")
+{
+	std::string json =
+		R"({"name":"Alice","address":{"street":"123 Main St","city":"New York","zipCode":"10001"},"score":10})";
+	DocWrapper doc(json);
+	ValueWrapper root = doc;
+
+	std::optional<Address> address = root["address"].asOptional<Address>();
+	REQUIRE(address.has_value());
+	CHECK(address->street == "123 Main St");
+	CHECK(address->city == "New York");
+	CHECK(address->zipCode == "10001");
+
+	std::optional<int> score = root["score"].asOptional<int>();
+	REQUIRE(score.has_value());
+	CHECK(*score == 10);
+
+	std::optional<std::string> name = root["name"].asOptional<std::string>();
+	REQUIRE(name.has_value());
+	CHECK(*name == "Alice");
+
+	CHECK_FALSE(root["missing"].asOptional<int>().has_value());
+	CHECK_FALSE(root["missing"].asOptional<Address>().has_value());
+
+	DocWrapper nullDoc(R"({"score":null,"address":null})");
+	ValueWrapper nullRoot = nullDoc;
+	CHECK_FALSE(nullRoot["score"].asOptional<int>().has_value());
+	CHECK_FALSE(nullRoot["address"].asOptional<Address>().has_value());
+}
+
+TEST_CASE("DocWrapper - missing or null without asOptional throws")
+{
+	DocWrapper doc(R"({"name":"Alice"})");
+	ValueWrapper root = doc;
+
+	CHECK_THROWS_AS(static_cast<Address>(root["address"]), std::logic_error);
+	CHECK_THROWS_AS(static_cast<std::string>(root["address"]), std::logic_error);
+
+	DocWrapper nullDoc(R"({"address":null})");
+	ValueWrapper nullRoot = nullDoc;
+	CHECK_THROWS_AS(static_cast<Address>(nullRoot["address"]), std::logic_error);
+	CHECK_THROWS_AS(static_cast<std::string>(nullRoot["address"]), std::logic_error);
+}
+
+TEST_CASE("MutDocWrapper - set std::optional omits empty and writes present")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+
+	root.set("score", std::optional<int>{7}, "emptyScore", std::optional<int>{}, "address",
+		std::optional<Address>{Address{"1 Oak", "Boston", "02101"}}, "noAddress", std::optional<Address>{});
+
+	std::string json = mutDoc.toString();
+	DocWrapper doc(json);
+	ValueWrapper readRoot = doc;
+
+	CHECK(static_cast<int>(readRoot["score"]) == 7);
+	CHECK_FALSE(readRoot.hasKey("emptyScore"));
+	CHECK(static_cast<std::string>(readRoot["address"]["city"]) == "Boston");
+	CHECK_FALSE(readRoot.hasKey("noAddress"));
+}
+
+TEST_CASE("Assignment - std::optional present and empty")
+{
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+	root = std::optional<int>{42};
+	CHECK(root.toString() == "42");
+	root = std::optional<int>{};
+	CHECK(root.toString() == "null");
+	root = std::optional<Address>{Address{"1 Oak", "Boston", "02101"}};
+	CHECK(root.toString() == "{\"street\":\"1 Oak\",\"city\":\"Boston\",\"zipCode\":\"02101\"}");
+	root = std::optional<Address>{};
+	CHECK(root.toString() == "null");
+}
+
+TEST_CASE("Roundtrip - Custom type with std::optional fields")
+{
+	PersonWithOptional original{"Alice", Address{"456 Oak Ave", "Boston", "02101"}, 99};
+
+	MutDocWrapper mutDoc;
+	MutValueWrapper root = mutDoc;
+	root = original;
+
+	DocWrapper doc(mutDoc.toString());
+	PersonWithOptional result = static_cast<ValueWrapper>(doc);
+	CHECK(result == original);
+
+	PersonWithOptional noOptionals{"Bob", std::nullopt, std::nullopt};
+	MutDocWrapper mutDoc2;
+	MutValueWrapper root2 = mutDoc2;
+	root2 = noOptionals;
+
+	std::string json = mutDoc2.toString();
+	CHECK(json.find("address") == std::string::npos);
+	CHECK(json.find("score") == std::string::npos);
+
+	DocWrapper doc2(json);
+	PersonWithOptional result2 = static_cast<ValueWrapper>(doc2);
+	CHECK(result2 == noOptionals);
 }
 
 // ============================================================================

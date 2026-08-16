@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -158,7 +159,13 @@ public:
 			}
 			return res;
 		}
+		template <typename T> std::optional<T> asOptional() const // Must be explicitly called when the value is optional
+		{
+			if (!val_ || yyjson_is_null(val_)) return std::nullopt;
+			return static_cast<T>(*this);
+		}
 		template <typename T> operator T() const; // Custom types: uses fromJson<T>
+
 		// Explicit conversion, second type is the intermediate type
 		template <typename TTo, typename TFrom> TTo internal_cast() const { return static_cast<TTo>(static_cast<TFrom>(*this)); }
 
@@ -301,6 +308,10 @@ public:
 			yyjson_mut_val* val = createValue(value);
 			yyjson_mut_obj_add_val(mutDoc_, val_, key, val);
 		}
+		template <typename T> void setNoCheck(const char* key, const std::optional<T>& value)
+		{
+			if (value.has_value()) setNoCheck(key, *value);
+		}
 
 		// Ensure value is an array
 		MutValueWrapper& asArr()
@@ -415,6 +426,12 @@ public:
 			val_ = createValue(value);
 			return *this;
 		}
+		template <typename T> MutValueWrapper& operator=(const std::optional<T>& value)
+		{
+			if (value.has_value()) return *this = *value;
+			yyjson_mut_set_null(val_);
+			return *this;
+		}
 		template <typename T> MutValueWrapper& operator=(const T& value)
 		{
 			toJson(*this, value);
@@ -481,6 +498,11 @@ public:
 			}
 			return obj;
 		}
+		template <typename T> yyjson_mut_val* createValue(const std::optional<T>& value)
+		{
+			if (value.has_value()) return createValue(*value);
+			return yyjson_mut_null(mutDoc_);
+		}
 		template <typename T> yyjson_mut_val* createValue(const T& value)
 		{
 			yyjson_mut_val* obj = yyjson_mut_obj(mutDoc_);
@@ -546,7 +568,8 @@ using MutValueWrapper = MutDocWrapper::MutValueWrapper;
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PRIMITIVE_CONVERSION(toType, fromType)                                                \
-	template <>(toType) inline fromJson<toType>(const DocWrapper::ValueWrapper& val)          \
+	/* NOLINTNEXTLINE(bugprone-macro-parentheses) */                                          \
+	template <> toType inline fromJson<toType>(const DocWrapper::ValueWrapper& val)           \
 	{                                                                                         \
 		return val.internal_cast<toType, fromType>();                                         \
 	}                                                                                         \

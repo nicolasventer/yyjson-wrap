@@ -81,18 +81,14 @@ template <> void toJson(MutValueWrapper& value, const Address& a)
 
 template <> void toJson(MutValueWrapper& value, const Person& p)
 {
-	value.set("name", p.name, "age", p.age, "hobbies", p.hobbies, "metadata", p.metadata);
-	if (p.address.has_value()) value.set("address", p.address.value());
+	value.set("name", p.name, "age", p.age, "address", p.address, "hobbies", p.hobbies, "metadata", p.metadata);
 }
 
 template <> Address fromJson(const ValueWrapper& doc) { return Address{doc["street"], doc["city"], doc["zipCode"]}; }
 
 template <> Person fromJson(const ValueWrapper& doc)
 {
-	Person res{doc["name"], doc["age"], {}, doc["hobbies"], {}};
-	if (doc.hasKey("address")) res.address = Address(doc["address"]);
-	if (doc.hasKey("metadata")) res.metadata = static_cast<std::map<std::string, std::string>>(doc["metadata"]);
-	return res;
+	return Person{doc["name"], doc["age"], doc["address"].asOptional<Address>(), doc["hobbies"], doc["metadata"]};
 }
 
 int main()
@@ -283,6 +279,7 @@ public:
         template <typename T, typename U> operator std::map<T, U>() const;
         template <typename T, typename U> operator std::vector<std::pair<T, U>>() const;
         template <typename T> operator T() const;  // Uses fromJson<T>
+        template <typename T> std::optional<T> asOptional() const;  // Must be explicitly called when the value is optional
         template <typename TTo, typename TFrom> TTo internal_cast() const;  // Explicit conversion via an intermediate type
 
         // Access
@@ -338,6 +335,7 @@ public:
         template <typename T, typename U> MutValueWrapper& operator=(const std::map<T, U>& value);
         template <typename T, typename U> MutValueWrapper& operator=(const std::vector<std::pair<T, U>>& value);
         template <typename T> MutValueWrapper& operator=(const T& value);
+        template <typename T> MutValueWrapper& operator=(const std::optional<T>& value);
 
         std::string toString(EPrettyPrint prettyPrint = EPrettyPrint::None) const;
 
